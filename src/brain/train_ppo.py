@@ -40,6 +40,15 @@ def find_data_file(level=1):
         
     return files[0] if files else None
 
+def find_latest_checkpoint(model_dir):
+    """Finds the latest checkpoint in the model directory."""
+    checkpoints = glob.glob(os.path.join(model_dir, "*.zip"))
+    if not checkpoints:
+        return None
+    # Sort by modification time
+    latest_checkpoint = max(checkpoints, key=os.path.getmtime)
+    return latest_checkpoint
+
 def main():
     parser = argparse.ArgumentParser(description="Train PPO/RecurrentPPO Agent")
     parser.add_argument("--level", type=int, default=1, choices=[1, 2], help="Training Level (1=MLP, 2=LSTM)")
@@ -84,47 +93,52 @@ def main():
     env = TradingEnv(df)
     env = Monitor(env) 
     
-    # 4. Define Model
-    print(f"🧠 Initializing {model_type} Agent...")
+    # 4. Define Agent (Load or Create)
+    latest_ckpt = find_latest_checkpoint(model_dir)
     
+    if latest_ckpt:
+        print(f"🔄 Resuming from Checkpoint: {latest_ckpt}")
+        if level == 1:
+            model = PPO.load(latest_ckpt, env=env, tensorboard_log=log_dir)
+        else:
+            model = RecurrentPPO.load(latest_ckpt, env=env, tensorboard_log=log_dir)
+    else:
+        print(f"🧠 Initializing New {model_type} Agent...")
+        if level == 1:
+            model = PPO(
+                "MlpPolicy", 
+                env, 
+                verbose=1, 
+                tensorboard_log=log_dir,
+                learning_rate=0.0003,
+                n_steps=2048,
+                batch_size=64,
+                gamma=0.99
+            )
+        else:
+            model = RecurrentPPO(
+                "MlpLstmPolicy", 
+                env, 
+                verbose=1, 
+                tensorboard_log=log_dir,
+                learning_rate=0.0003,
+                n_steps=2048,
+                batch_size=64,
+                gamma=0.99,
+                policy_kwargs={
+                    "enable_critic_lstm": False, 
+                    "lstm_hidden_size": 256,
+                    "n_lstm_layers": 1
+                }
+            )
+
     checkpoint_callback = CheckpointCallback(
         save_freq=50000, 
         save_path=model_dir,
         name_prefix=f"neurotrader_L{level}"
     )
-    
-    if level == 1:
-        # Level 1: Standard PPO (MLP)
-        model = PPO(
-            "MlpPolicy", 
-            env, 
-            verbose=1, 
-            tensorboard_log=log_dir,
-            learning_rate=0.0003,
-            n_steps=2048,
-            batch_size=64,
-            gamma=0.99
-        )
-        total_timesteps = 3_000_000
-        
-    elif level == 2:
-        # Level 2: Recurrent PPO (LSTM)
-        model = RecurrentPPO(
-            "MlpLstmPolicy", 
-            env, 
-            verbose=1, 
-            tensorboard_log=log_dir,
-            learning_rate=0.0003,
-            n_steps=2048,
-            batch_size=64,
-            gamma=0.99,
-            policy_kwargs={
-                "enable_critic_lstm": False, 
-                "lstm_hidden_size": 256,
-                "n_lstm_layers": 1
-            }
-        )
-        total_timesteps = 5_000_000
+
+    total_timesteps = 3_000_000 if level == 1 else 5_000_000
     
     # 5. Train
     print(f"🏃‍♂️ Training started... (Steps: {total_timesteps})")
@@ -132,7 +146,8 @@ def main():
         model.learn(
             total_timesteps=total_timesteps, 
             progress_bar=True,
-            callback=checkpoint_callback
+            callback=checkpoint_callback,
+            reset_num_timesteps=False # Crucial for resuming correct tensorboard logging
         )
     except KeyboardInterrupt:
         print("\n⚠️ Training Interrupted! Saving current model...")
