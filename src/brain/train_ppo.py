@@ -3,12 +3,14 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pandas as pd
-from sb3_contrib import RecurrentPPO  # [NEW] LSTM supported PPO
+from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 import os
 import glob
 import sys
+import argparse
 from pathlib import Path
 
 # Add src to path
@@ -20,80 +22,120 @@ from brain.env.trading_env import TradingEnv
 # Paths
 DATA_DIR_DRIVE = "/content/drive/MyDrive/NeuroTrader_Workspace/data"
 DATA_DIR_LOCAL = str(ROOT_DIR / "data" / "processed")
+WORKSPACE_DRIVE = "/content/drive/MyDrive/NeuroTrader_Workspace"
 
-LOG_DIR = "/content/drive/MyDrive/NeuroTrader_Workspace/logs"
-MODEL_DIR = "/content/drive/MyDrive/NeuroTrader_Workspace/models"
-
-def find_data_file():
-    files = glob.glob(os.path.join(DATA_DIR_DRIVE, "*.parquet"))
+def find_data_file(level=1):
+    # Look for files with _L{level}.parquet suffix
+    pattern = f"*_L{level}.parquet"
+    
+    # Priority: Drive -> Local
+    files = glob.glob(os.path.join(DATA_DIR_DRIVE, pattern))
     if not files:
-        files = glob.glob(os.path.join(DATA_DIR_LOCAL, "*.parquet"))
+        files = glob.glob(os.path.join(DATA_DIR_LOCAL, pattern))
     if not files:
-        files = glob.glob("*.parquet")
+        files = glob.glob(pattern) # CWD
+        
     return files[0] if files else None
 
 def main():
-    print("🚀 Starting NeuroTrader Recurrent PPO (LSTM) Training...")
+    parser = argparse.ArgumentParser(description="Train PPO/RecurrentPPO Agent")
+    parser.add_argument("--level", type=int, default=1, choices=[1, 2], help="Training Level (1=MLP, 2=LSTM)")
+    args = parser.parse_args()
     
-    os.makedirs(LOG_DIR, exist_ok=True)
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    level = args.level
+    model_type = "MLP" if level == 1 else "LSTM"
     
-    data_file = find_data_file()
+    # Namespaced Directories
+    # e.g. models/L1_MLP/, logs/L1_MLP/
+    sub_dir = f"L{level}_{model_type}"
+    
+    log_dir = os.path.join(WORKSPACE_DRIVE, "logs", sub_dir)
+    model_dir = os.path.join(WORKSPACE_DRIVE, "models", sub_dir)
+    
+    print(f"🚀 Starting NeuroTrader Training (Level {level}: {model_type})...")
+    print(f"📂 Directories: \n  Logs: {log_dir}\n  Models: {model_dir}")
+    
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # 1. Load Data
+    data_file = find_data_file(level)
     if not data_file:
-        print("❌ No Parquet data found!")
+        print(f"❌ No Parquet data found for Level {level} (*_L{level}.parquet)!")
+        print(f"👉 Please run 'python tools/process_data.py --level {level}' first.")
         return
         
     print(f"📂 Loading Data: {data_file}")
     df = pd.read_parquet(data_file)
     print(f"✅ Data Loaded: {len(df):,} rows")
     
-    # [NEW] Verify DataFrame has new features
-    required_cols = ['atr', 'log_ret_lag_1', 'log_ret_lag_5']
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        print(f"❌ Data missing Level 2 features: {missing}")
-        print("👉 Please run 'python tools/process_data.py' locally and re-upload data!")
-        return
+    # 2. Verify Features (Level 2+)
+    if level >= 2:
+        required_cols = ['atr', 'log_ret_lag_1', 'log_ret_lag_5']
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            print(f"❌ Data missing Level 2 features: {missing}")
+            return
 
-    # Create Env
+    # 3. Create Env
     env = TradingEnv(df)
     env = Monitor(env) 
     
-    # Define Model (LSTM)
-    print("🧠 Initializing RecurrentPPO (LSTM) Agent...")
+    # 4. Define Model
+    print(f"🧠 Initializing {model_type} Agent...")
+    
     checkpoint_callback = CheckpointCallback(
-        save_freq=50000,  # Save more often as LSTM is harder to train
-        save_path=MODEL_DIR,
-        name_prefix="neurotrader_lstm"
+        save_freq=50000, 
+        save_path=model_dir,
+        name_prefix=f"neurotrader_L{level}"
     )
     
-    model = RecurrentPPO(
-        "MlpLstmPolicy", 
-        env, 
-        verbose=1, 
-        tensorboard_log=LOG_DIR,
-        learning_rate=0.0003,
-        n_steps=2048,
-        batch_size=64, # Batch size for PPO
-        gamma=0.99,
-        policy_kwargs={
-            "enable_critic_lstm": False, 
-            "lstm_hidden_size": 256,
-            "n_lstm_layers": 1
-        }
-    )
+    if level == 1:
+        # Level 1: Standard PPO (MLP)
+        model = PPO(
+            "MlpPolicy", 
+            env, 
+            verbose=1, 
+            tensorboard_log=log_dir,
+            learning_rate=0.0003,
+            n_steps=2048,
+            batch_size=64,
+            gamma=0.99
+        )
+        total_timesteps = 3_000_000
+        
+    elif level == 2:
+        # Level 2: Recurrent PPO (LSTM)
+        model = RecurrentPPO(
+            "MlpLstmPolicy", 
+            env, 
+            verbose=1, 
+            tensorboard_log=log_dir,
+            learning_rate=0.0003,
+            n_steps=2048,
+            batch_size=64,
+            gamma=0.99,
+            policy_kwargs={
+                "enable_critic_lstm": False, 
+                "lstm_hidden_size": 256,
+                "n_lstm_layers": 1
+            }
+        )
+        total_timesteps = 5_000_000
     
-    print("🏃‍♂️ Training started... (Monitor logs in TensorBoard)")
+    # 5. Train
+    print(f"🏃‍♂️ Training started... (Steps: {total_timesteps})")
     try:
         model.learn(
-            total_timesteps=5_000_000, # Increased for LSTM
+            total_timesteps=total_timesteps, 
             progress_bar=True,
             callback=checkpoint_callback
         )
     except KeyboardInterrupt:
         print("\n⚠️ Training Interrupted! Saving current model...")
         
-    final_path = os.path.join(MODEL_DIR, "neurotrader_brain_lstm_final")
+    # 6. Save Final
+    final_path = os.path.join(model_dir, "final_model")
     model.save(final_path)
     print(f"✨ Training Complete. Model saved to: {final_path}.zip")
 

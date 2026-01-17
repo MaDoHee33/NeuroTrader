@@ -4,13 +4,15 @@ import ta
 import numpy as np
 from pathlib import Path
 
+import argparse
+
 # Setup paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_RAW = ROOT_DIR / "data" / "raw"
 DATA_PROCESSED = ROOT_DIR / "data" / "processed"
 
-def process_file(file_path):
-    print(f"🔄 Processing: {file_path.name}")
+def process_file(file_path, level=1):
+    print(f"🔄 Processing: {file_path.name} [Level {level}]")
     
     try:
         # 1. Load CSV
@@ -27,7 +29,7 @@ def process_file(file_path):
              print(f"⚠️  Skipping {file_path.name}: Not enough data ({len(df)} rows)")
              return
 
-        # 4. Indicators
+        # 4. Indicators (Common Base)
         # Trend
         df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         df['ema_50'] = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
@@ -43,24 +45,26 @@ def process_file(file_path):
         df['bb_high'] = bb.bollinger_hband()
         df['bb_low'] = bb.bollinger_lband()
         
-        # [NEW] ATR for Stop Loss / Volatility sizing
-        df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
-        
-        # [NEW] Lag Features (Short-term memory for MLP/LSTM)
-        # Log Returns of last 1, 2, 3, 5 candles
-        df['log_ret'] = np.log(df['close'] / df['close'].shift(1))
-        for lag in [1, 2, 3, 5]:
-            df[f'log_ret_lag_{lag}'] = df['log_ret'].shift(lag)
+        # [LEVEL 2] Advanced Features
+        if level >= 2:
+            # ATR for Stop Loss / Volatility sizing
+            df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
+            
+            # Lag Features (Short-term memory for MLP/LSTM)
+            # Log Returns of last 1, 2, 3, 5 candles
+            df['log_ret'] = np.log(df['close'] / df['close'].shift(1))
+            for lag in [1, 2, 3, 5]:
+                df[f'log_ret_lag_{lag}'] = df['log_ret'].shift(lag)
 
         # 5. Clean NaN (from lookback periods)
         df.dropna(inplace=True)
         
         # 4. Storage Optimization
-        # Create output filename (change .csv to .parquet)
-        out_name = file_path.stem + ".parquet"
+        # Create output filename with Level suffix
+        out_name = f"{file_path.stem}_L{level}.parquet"
         out_path = DATA_PROCESSED / out_name
         
-        # Save as Parquet (Snappy compression is default and good balance)
+        # Save as Parquet
         df.to_parquet(out_path, index=False)
         
         print(f"✅ Saved: {out_name} | Shape: {df.shape}")
@@ -69,6 +73,10 @@ def process_file(file_path):
         print(f"❌ Error processing {file_path.name}: {e}")
 
 def main():
+    parser = argparse.ArgumentParser(description="Process raw data into features.")
+    parser.add_argument("--level", type=int, default=1, choices=[1, 2], help="Feature Level (1=Basic, 2=Advanced)")
+    args = parser.parse_args()
+    
     # Ensure processed directory exists
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     
@@ -79,10 +87,10 @@ def main():
         print("⚠️  No CSV files found in data/raw/")
         return
         
-    print(f"🚀 Starting Data Pipeline for {len(files)} files...")
+    print(f"🚀 Starting Data Pipeline (Level {args.level}) for {len(files)} files...")
     
     for file in files:
-        process_file(file)
+        process_file(file, level=args.level)
         
     print("\n✨ Data Processing Complete.")
 

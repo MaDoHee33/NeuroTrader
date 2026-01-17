@@ -100,10 +100,55 @@ def backtest(model_path, data_path, model_type="mlp"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, required=True, help="Path to trained model.zip")
-    parser.add_argument("--data", type=str, required=True, help="Path to .parquet data file")
-    parser.add_argument("--type", type=str, default="mlp", choices=["mlp", "lstm"], help="Model type: mlp or lstm")
+    parser.add_argument("--model", type=str, help="Path to trained model.zip")
+    parser.add_argument("--data", type=str, help="Path to .parquet data file")
+    parser.add_argument("--level", type=int, help="Level (1=MLP, 2=LSTM) - Auto-resolves model/data paths")
+    parser.add_argument("--type", type=str, default="mlp", choices=["mlp", "lstm"], help="Model type override")
     
     args = parser.parse_args()
     
+    # Auto-resolve paths if Level is provided
+    if args.level:
+        base_dir = "/content/drive/MyDrive/NeuroTrader_Workspace"
+        if not os.path.exists(base_dir): # If local
+             base_dir = str(ROOT_DIR)
+             
+        # Resolve Model
+        if not args.model:
+            model_type_str = "LSTM" if args.level == 2 else "MLP"
+            # Try to find final model
+            sub_dir = f"L{args.level}_{model_type_str}"
+            model_path = os.path.join(base_dir, "models", sub_dir, "final_model.zip")
+            if not os.path.exists(model_path):
+                 print(f"⚠️  Could not find auto-resolved model: {model_path}")
+                 # Fallback to searching
+                 import glob
+                 candidates = glob.glob(os.path.join(base_dir, "models", sub_dir, "*.zip"))
+                 if candidates:
+                     model_path = candidates[-1] # Take latest
+            args.model = model_path
+            
+        # Resolve Data
+        if not args.data:
+            pattern = f"*_L{args.level}.parquet"
+            # Search logic similar to train_ppo
+            search_dirs = [
+                os.path.join(base_dir, "data"), 
+                os.path.join(ROOT_DIR, "data", "processed"),
+                "."
+            ]
+            for d in search_dirs:
+                matches = glob.glob(os.path.join(d, pattern))
+                if matches:
+                    args.data = matches[0]
+                    break
+        
+        # Resolve Type
+        if args.level == 2:
+            args.type = "lstm"
+    
+    if not args.model or not args.data:
+        print("❌ Error: Must provide --model and --data OR --level")
+        return
+
     backtest(args.model, args.data, args.type)
