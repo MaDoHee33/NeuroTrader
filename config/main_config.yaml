@@ -1,0 +1,28 @@
+system:
+  app_name: "NeuroTrader-Ultimate"
+  version: "1.2.0"
+  mode: "PAPER_TRADE" # LIVE, PAPER_TRADE, BACKTEST
+  tick_interval_sec: 1.0
+
+hardware:
+  max_cpu_temp: 80.0
+  max_ram_usage_percent: 85.0
+  device: "cuda"
+
+stealth:
+  enable_jitter: true
+  jitter_range: [-1.5, 2.5] # Seconds
+  fake_mouse_movements: false
+
+safety:
+  human_override_lock: true
+  max_daily_drawdown: 5.0
+  kill_switch_enabled: true
+
+llm:
+  provider: "ollama"
+  model_name: "llama3" # Ensure you have run: ollama pull mistral
+  base_url: "http://localhost:11434"
+  timeout_sec: 60
+  low_vram: true
+

@@ -1,0 +1,27 @@
+
+# Data
+data/
+*.parquet
+*.csv
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Secrets
+config/secrets.yaml
+tools/d.py
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+
+# Logs & Models (Local)
+logs/
+models/
