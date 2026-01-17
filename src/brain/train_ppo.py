@@ -3,6 +3,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pandas as pd
+import matplotlib
+# Force Agg backend for Colab/Headless to prevent display errors
+matplotlib.use('Agg')
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import CheckpointCallback
