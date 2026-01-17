@@ -27,31 +27,33 @@ def process_file(file_path):
              print(f"⚠️  Skipping {file_path.name}: Not enough data ({len(df)} rows)")
              return
 
+        # 4. Indicators
         # Trend
         df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         df['ema_50'] = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
-        df['ema_200'] = ta.trend.EMAIndicator(close=df['close'], window=200).ema_indicator()
         
         # Momentum
-        rsi = ta.momentum.RSIIndicator(close=df['close'], window=14)
-        df['rsi'] = rsi.rsi()
-        
+        df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
         macd = ta.trend.MACD(close=df['close'])
         df['macd'] = macd.macd()
         df['macd_signal'] = macd.macd_signal()
-        df['macd_diff'] = macd.macd_diff()
         
         # Volatility
-        bb = ta.volatility.BollingerBands(close=df['close'], window=20, window_dev=2)
+        bb = ta.volatility.BollingerBands(close=df['close'], window=20, window_dev=2.0)
         df['bb_high'] = bb.bollinger_hband()
-        df['bb_mid'] = bb.bollinger_mavg()
         df['bb_low'] = bb.bollinger_lband()
         
-        atr = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14)
-        df['atr'] = atr.average_true_range()
+        # [NEW] ATR for Stop Loss / Volatility sizing
+        df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
         
-        # Drop NaN values created by indicators
-        df = df.dropna()
+        # [NEW] Lag Features (Short-term memory for MLP/LSTM)
+        # Log Returns of last 1, 2, 3, 5 candles
+        df['log_ret'] = np.log(df['close'] / df['close'].shift(1))
+        for lag in [1, 2, 3, 5]:
+            df[f'log_ret_lag_{lag}'] = df['log_ret'].shift(lag)
+
+        # 5. Clean NaN (from lookback periods)
+        df.dropna(inplace=True)
         
         # 4. Storage Optimization
         # Create output filename (change .csv to .parquet)

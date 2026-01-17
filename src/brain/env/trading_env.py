@@ -24,10 +24,11 @@ class TradingEnv(gym.Env):
         
         # Observation Space: 
         # [Close Price, RSI, MACD, MACD_Signal, BB_High, BB_Low, EMA_20, EMA_50, Balance, Position]
-        # We assume these columns exist in the dataframe from our pipeline
+        # We assume these columns exist in the dataframe        # Features expected in DF
         self.feature_cols = [
             'close', 'rsi', 'macd', 'macd_signal', 
-            'bb_high', 'bb_low', 'ema_20', 'ema_50'
+            'bb_high', 'bb_low', 'ema_20', 'ema_50',
+            'atr', 'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
         ]
         
         # Check if cols exist

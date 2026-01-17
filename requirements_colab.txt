@@ -1,6 +1,7 @@
 
 # Optimized for Colab Training (No GUI/Trading Drivers)
 stable-baselines3[extra]>=2.3.0
+sb3-contrib>=2.3.0
 gymnasium==0.29.1
 pandas
 numpy<2.0
