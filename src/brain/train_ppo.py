@@ -113,7 +113,8 @@ def main():
                 learning_rate=0.0003,
                 n_steps=2048,
                 batch_size=64,
-                gamma=0.99
+                gamma=0.99,
+                ent_coef=0.01 # Force exploration to prevent "Frozen Agent"
             )
         else:
             model = RecurrentPPO(
@@ -125,6 +126,7 @@ def main():
                 n_steps=2048,
                 batch_size=64,
                 gamma=0.99,
+                ent_coef=0.01, # Force exploration
                 policy_kwargs={
                     "enable_critic_lstm": False, 
                     "lstm_hidden_size": 256,
