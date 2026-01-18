@@ -149,6 +149,6 @@ if __name__ == "__main__":
     
     if not args.model or not args.data:
         print("❌ Error: Must provide --model and --data OR --level")
-        return
+        sys.exit(1)
 
     backtest(args.model, args.data, args.type)
