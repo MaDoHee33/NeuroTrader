@@ -96,7 +96,7 @@ def run_backtest(args):
     # Configure Backtest Engine
     engine_config = BacktestEngineConfig(
         trader_id="NEURO-BOT-01",
-        logging=LoggingConfig(log_level=args.log_level)
+        logging=LoggingConfig(log_level="WARNING")  # Suppress verbose logs
     )
     engine = BacktestEngine(config=engine_config)
 

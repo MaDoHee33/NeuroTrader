@@ -8,12 +8,17 @@ from src.neuro_nautilus.config import NeuroNautilusConfig
 import asyncio
 
 class NeuroBridgeStrategy(Strategy):
-    def __init__(self, config: NeuroNautilusConfig):
+    def __init__(self(self, config: NeuroNautilusConfig):
         super().__init__(config)
         self.instrument_id = config.instrument_id
         
         # Initialize the Brain
-        self.agent = RLAgent(config.agent_config)
+        self.agent = RLAgent(model_path=config.model_path)
+        
+        # Progress tracking (to avoid log spam)
+        self.bar_count = 0
+        self.trade_count = 0
+        
         self.log.info("🧠 NeuroBridgeStrategy Initialized")
 
     def on_start(self):
@@ -32,6 +37,11 @@ class NeuroBridgeStrategy(Strategy):
         self.log.info(f"Subscribed to {bar_type}")
 
     def on_bar(self, bar: Bar):
+        # Progress tracking - log every 1000 bars to avoid spam
+        self.bar_count += 1
+        if self.bar_count % 1000 == 0:
+            self.log.info(f"📊 Processed {self.bar_count:,} bars | Trades: {self.trade_count}")
+        
         # Convert Bar to dict for agent
         bar_dict = {
             'timestamp': bar.ts_init,
@@ -90,7 +100,9 @@ class NeuroBridgeStrategy(Strategy):
         volume = 1  # Match size_precision=0 (minimum is 1)
 
         if action == 1:  # BUY
-            self.log.info(f"🤖 Agent says BUY at {bar.close}")
+            self.trade_count += 1
+            # Only log actual trades
+            self.log.info(f"💰 BUY #{self.trade_count} @ {bar.close.as_double():.2f}")
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,
                 order_side=OrderSide.BUY,
@@ -99,8 +111,8 @@ class NeuroBridgeStrategy(Strategy):
             )
             self.submit_order(order)
         elif action == 2:  # SELL
-            self.log.info(f"🤖 Agent says SELL at {bar.close}")
-             # Check if we have position first? (Nautilus handles net positions, but let's be safe)
+            self.trade_count += 1
+            self.log.info(f"💸 SELL #{self.trade_count} @ {bar.close.as_double():.2f}")
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,
                 order_side=OrderSide.SELL,
@@ -108,4 +120,4 @@ class NeuroBridgeStrategy(Strategy):
                 time_in_force=TimeInForce.GTC
             )
             self.submit_order(order)
-        # else: HOLD (action == 0)
+        # else: HOLD (action == 0) - no log spam
