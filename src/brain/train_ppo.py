@@ -23,13 +23,22 @@ sys.path.append(str(ROOT_DIR / "src"))
 from brain.env.trading_env import TradingEnv
 
 # Paths
+# Paths
 DATA_DIR_DRIVE = "/content/drive/MyDrive/NeuroTrader_Workspace/data"
 DATA_DIR_LOCAL = str(ROOT_DIR / "data" / "processed")
-WORKSPACE_DRIVE = "/content/drive/MyDrive/NeuroTrader_Workspace"
+
+if os.path.exists("/content/drive/MyDrive"):
+    WORKSPACE_DRIVE = "/content/drive/MyDrive/NeuroTrader_Workspace"
+else:
+    # Use local workspace if not in Colab
+    WORKSPACE_DRIVE = str(ROOT_DIR / "workspace")
+    os.makedirs(WORKSPACE_DRIVE, exist_ok=True)
 
 def find_data_file(level=1):
     # Look for files with _L{level}.parquet suffix
     pattern = f"*_L{level}.parquet"
+    if level == 3:
+        pattern = "*_News.parquet"
     
     # Priority: Drive -> Local
     files = glob.glob(os.path.join(DATA_DIR_DRIVE, pattern))
@@ -51,11 +60,11 @@ def find_latest_checkpoint(model_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Train PPO/RecurrentPPO Agent")
-    parser.add_argument("--level", type=int, default=1, choices=[1, 2], help="Training Level (1=MLP, 2=LSTM)")
+    parser.add_argument("--level", type=int, default=1, choices=[1, 2, 3], help="Training Level (1=MLP, 2=LSTM, 3=Hybrid)")
     args = parser.parse_args()
     
     level = args.level
-    model_type = "MLP" if level == 1 else "LSTM"
+    model_type = "MLP" if level == 1 else ("LSTM" if level == 2 else "Hybrid")
     
     # Namespaced Directories
     # e.g. models/L1_MLP/, logs/L1_MLP/
@@ -141,6 +150,8 @@ def main():
     )
 
     total_timesteps = 3_000_000 if level == 1 else 5_000_000
+    if level == 3:
+        total_timesteps = 6_000_000 # More steps for hybrid learning
     
     # 5. Train
     print(f"🏃‍♂️ Training started... (Steps: {total_timesteps})")

@@ -31,6 +31,10 @@ class TradingEnv(gym.Env):
             'atr', 'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
         ]
         
+        # Level 3: Add News Impact if available
+        if 'news_impact_score' in df.columns:
+            self.feature_cols.append('news_impact_score')
+        
         # Check if cols exist
         missing_cols = [c for c in self.feature_cols if c not in df.columns]
         if missing_cols:
