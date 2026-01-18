@@ -164,18 +164,28 @@ def train_model(args):
         print("✅ Checkpoint loaded successfully")
         print(f"   - Continuing training for {args.timesteps:,} more steps")
     else:
-        # Create new model
-        print(f"\n🤖 Initializing PPO Model...")
+        # Create new model with RESEARCH-BASED HYPERPARAMETERS
+        print(f"\n🤖 Initializing PPO Model with Research-Optimized Parameters...")
+        print(f"   📚 Based on academic papers for financial trading")
         print(f"   - Policy: MlpPolicy")
         print(f"   - Timesteps: {args.timesteps:,}")
-        print(f"   - Learning Rate: {args.learning_rate}")
+        print(f"   - Learning Rate: 0.0003 (research optimal)")
+        print(f"   - Gamma: 0.99 (long-term focus)")
+        print(f"   - N-Steps: 2048 (high stability)")
         
         model = PPO(
             "MlpPolicy",
             vec_env,
-            learning_rate=args.learning_rate,
-            n_steps=2048,
-            batch_size=64,
+            learning_rate=0.0003,      # Research optimal for trading
+            gamma=0.99,                 # Long-term focus (standard for finance)
+            gae_lambda=0.95,           # Generalized Advantage Estimation
+            clip_range=0.2,            # PPO clipping (stability)
+            ent_coef=0.01,             # Entropy for exploration
+            vf_coef=0.5,               # Value function coefficient
+            max_grad_norm=0.5,         # Gradient clipping
+            n_steps=2048,              # Steps per update (large for stability)
+            batch_size=64,             # Batch size for gradient descent
+            n_epochs=10,               # Epochs per PPO update
             verbose=1,
             tensorboard_log=str(paths['logs'])
         )

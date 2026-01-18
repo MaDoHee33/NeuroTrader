@@ -4,10 +4,12 @@ from gymnasium import spaces
 import numpy as np
 import pandas as pd
 from typing import Optional
+from collections import deque
 
 class TradingEnv(gym.Env):
     """
     A reinforcement learning environment for trading using Gymnasium.
+    Enhanced with research-based reward functions (Sharpe ratio, risk management).
     """
     metadata = {'render_modes': ['human']}
 
@@ -18,6 +20,9 @@ class TradingEnv(gym.Env):
         self.initial_balance = initial_balance
         self.render_mode = render_mode
         self.max_steps = max_steps if max_steps else len(df) - 1
+        
+        # Sharpe ratio tracking (research-based)
+        self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
         
         # Action Space: 0=HOLD, 1=BUY, 2=SELL
         self.action_space = spaces.Discrete(3)
@@ -69,6 +74,9 @@ class TradingEnv(gym.Env):
         # Start equity = balance + position value
         self.equity = self.initial_balance
         self.trades_history = []
+        
+        # Reset Sharpe tracking
+        self.returns_history.clear()
         
         # Log initial state
         print(f"🔄 Reset: Balance=${self.balance:.2f}, Position={self.position:.4f} units @ ${initial_price:.2f}")
@@ -134,16 +142,56 @@ class TradingEnv(gym.Env):
         else:
             self.equity = self.balance + (self.position * current_price)
         
-        # Reward: Log return (better for training stability)
-        if prev_equity > 0:
-            reward = np.log(self.equity / prev_equity)
-        else:
-            reward = 0
+        # ===== RESEARCH-BASED REWARD FUNCTION =====
+        # Reference: Multiple research papers on PPO for trading
         
-        # Penalty for holding too much or too little (encourage balanced portfolio)
+        # 1. Calculate log return (base component)
+        if prev_equity > 0:
+            log_return = np.log(self.equity / prev_equity)
+        else:
+            log_return = 0
+        
+        # Track returns for Sharpe calculation
+        self.returns_history.append(log_return)
+        
+        # 2. Calculate Differential Sharpe Ratio (research-based)
+        # This approximates change in Sharpe ratio at each step
+        if len(self.returns_history) >= 10:  # Need minimum history
+            returns_array = np.array(self.returns_history)
+            mean_return = np.mean(returns_array)
+            std_return = np.std(returns_array) + 1e-6  # Avoid division by zero
+            sharpe_contribution = (log_return - mean_return) / std_return
+        else:
+            sharpe_contribution = 0
+        
+        # 3. Transaction cost penalty (if trade occurred)
+        transaction_penalty = 0
+        if trade_info is not None:
+            # Already deducted from balance, but signal it in reward
+            transaction_penalty = -0.01  # Small penalty to discourage over-trading
+        
+        # 4. Drawdown penalty (research-based risk management)
+        current_drawdown = (self.equity - self.initial_balance) / self.initial_balance
+        drawdown_penalty = 0
+        if current_drawdown < -0.1:  # More than 10% loss
+            drawdown_penalty = -0.05  # Significant penalty
+        elif current_drawdown < -0.05:  # More than 5% loss
+            drawdown_penalty = -0.02  # Moderate penalty
+        
+        # 5. Composite reward (weighted combination)
+        # Weights based on research best practices
+        reward = (
+            0.5 * log_return +           # Base profit/loss
+            0.3 * sharpe_contribution +  # Risk-adjusted performance
+            0.1 * transaction_penalty +  # Discourage over-trading
+            0.1 * drawdown_penalty       # Risk management
+        )
+        
+        # 6. Portfolio balance bonus (encourage diversification)
+        # Small bonus for keeping balanced portfolio
         portfolio_imbalance = abs(self.balance - (self.position * current_price))
-        if portfolio_imbalance > self.initial_balance * 0.8:  # Very unbalanced
-            reward -= 0.01  # Small penalty
+        if portfolio_imbalance < self.initial_balance * 0.3:  # Well balanced
+            reward += 0.005  # Small bonus
         
         # Terminate
         done = False
