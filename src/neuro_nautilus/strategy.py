@@ -42,53 +42,55 @@ class NeuroBridgeStrategy(Strategy):
             "high": bar.high.as_double(),
             "low": bar.low.as_double(),
             "open": bar.open.as_double(),
-            "timestamp": bar.ts_event 
+        # Convert Bar to dict for agent
+        bar_dict = {
+            'timestamp': bar.ts_init,
+            'open': bar.open.as_double(),
+            'high': bar.high.as_double(),
+            'low': bar.low.as_double(),
+            'close': bar.close.as_double(),
+            'volume': bar.volume.as_double()
         }
         
-        # 2. Ask Agent (Sync Wrapper)
-        # We need to run the async decide method. 
-        # Since Nautilus is sync (mostly) in on_bar, we can use asyncio.run or a stored loop.
-        # For simplicity/robustness in Phase 2, we assume decision is fast.
-        
+        # Get portfolio state
+        portfolio_state = {}
         try:
-            # Create a new loop if needed or get existing?
-            # Warning: Nested loops can be tricky. 
-            # Ideally RLAgent should have a synchronous 'decide_sync' method.
-            # But let's try standard asyncio.run for this proof of concept.
-            
-            # Get Portfolio State
-            try:
-                account = self.portfolio.account(self.instrument_id.venue)
-                # Try as propertry or method
-                if callable(account.balance_free):
-                    balance = account.balance_free().as_double()
+            account = self.portfolio.account(venue=self.instrument_id.venue)
+            if account:
+                # Use method calls for balance
+                balances = account.balances()
+                if balances:
+                    balance = balances[0].free.as_double()
                 else:
-                    balance = account.balance_free.as_double()
-                    
-                # Fix: Use net_position which is available in dir()
-                if hasattr(self.portfolio, 'net_position'):
-                    # net_position(instrument_id) -> float/Quantity
-                    # It likely returns a signed quantity/float directly or a generic Position object
-                    # Based on standard Nautilus, it usually returns the signed quantity directly or we check type
-                    pos_val = self.portfolio.net_position(self.instrument_id)
-                    try:
-                         if hasattr(pos_val, 'as_double'):
-                             position = pos_val.as_double()
-                         else:
-                             position = float(pos_val)
-                    except:
-                         position = 0.0
-                else:
-                    self.log.error(f"Portfolio has no 'net_position'. Dir: {dir(self.portfolio)}")
-                    position = 0.0
-            except Exception as e:
-                self.log.error(f"Error getting portfolio state: {e}")
+                    balance = 10000.0
+            else:
                 balance = 10000.0
+                
+            # Fix: Use net_position which is available in dir()
+            if hasattr(self.portfolio, 'net_position'):
+                pos_val = self.portfolio.net_position(self.instrument_id)
+                try:
+                    if hasattr(pos_val, 'as_double'):
+                        position = pos_val.as_double()
+                    else:
+                        position = float(pos_val)
+                except:
+                    position = 0.0
+            else:
+                self.log.error(f"Portfolio has no 'net_position'. Dir: {dir(self.portfolio)}")
                 position = 0.0
-            
-            portfolio_state = {'balance': balance, 'position': position}
-            
-            decision = asyncio.run(self.agent.decide(market_data, None, None, portfolio_state=portfolio_state))
+                
+            portfolio_state = {
+                'balance': balance,
+                'position': position
+            }
+        except Exception as e:
+            self.log.error(f"Error getting portfolio state: {e}")
+            portfolio_state = {'balance': 10000.0, 'position': 0.0}
+        
+        # Get agent decision using process_bar
+        try:
+            decision = self.agent.process_bar(bar_dict, portfolio_state)
         except Exception as e:
             self.log.error(f"Agent failed to decide: {e}")
             return
