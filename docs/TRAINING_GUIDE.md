@@ -25,6 +25,19 @@ python -m src.brain.train \
 - `--model-name`: Output model filename (default: ppo_neurotrader)
 - `--learning-rate`: PPO learning rate (default: 0.0003)
 - `--data-dir`: Override data directory path
+- `--resume`: Path to checkpoint to continue training from
+
+### Resume Training
+If training is interrupted, resume from the latest checkpoint:
+```bash
+# Resume from a specific checkpoint
+python -m src.brain.train \
+  --resume models/checkpoints/ppo_checkpoint_50000_steps.zip \
+  --timesteps 500000 \
+  --model-name ppo_continued
+```
+
+**Note:** The `--timesteps` value represents **additional** steps to train, not total steps.
 
 ### Time Estimates (Local - CPU)
 - **100k steps**: ~3-4 minutes

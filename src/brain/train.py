@@ -109,6 +109,8 @@ def train_model(args):
     print(f"{'='*60}")
     print(f"🧠 NeuroNautilus Training")
     print(f"📍 Environment: {'Google Colab' if is_colab() else 'Local'}")
+    if args.resume:
+        print(f"🔄 Resuming from: {args.resume}")
     print(f"{'='*60}\n")
     
     # Get paths
@@ -132,21 +134,38 @@ def train_model(args):
     
     # Model Configuration
     model_path = paths['models'] / args.model_name
-    print(f"\n🤖 Initializing PPO Model...")
-    print(f"   - Policy: MlpPolicy")
-    print(f"   - Timesteps: {args.timesteps:,}")
-    print(f"   - Learning Rate: {args.learning_rate}")
-    print(f"   - Save Path: {model_path}")
     
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        learning_rate=args.learning_rate,
-        n_steps=2048,
-        batch_size=64,
-        verbose=1,
-        tensorboard_log=str(paths['logs'])
-    )
+    if args.resume:
+        # Resume from checkpoint
+        print(f"\n📂 Loading checkpoint: {args.resume}")
+        if not os.path.exists(args.resume):
+            raise FileNotFoundError(f"❌ Checkpoint not found: {args.resume}")
+        
+        model = PPO.load(
+            args.resume,
+            env=vec_env,
+            tensorboard_log=str(paths['logs'])
+        )
+        print("✅ Checkpoint loaded successfully")
+        print(f"   - Continuing training for {args.timesteps:,} more steps")
+    else:
+        # Create new model
+        print(f"\n🤖 Initializing PPO Model...")
+        print(f"   - Policy: MlpPolicy")
+        print(f"   - Timesteps: {args.timesteps:,}")
+        print(f"   - Learning Rate: {args.learning_rate}")
+        
+        model = PPO(
+            "MlpPolicy",
+            vec_env,
+            learning_rate=args.learning_rate,
+            n_steps=2048,
+            batch_size=64,
+            verbose=1,
+            tensorboard_log=str(paths['logs'])
+        )
+    
+    print(f"   - Save Path: {model_path}")
     
     # Checkpoint callback
     checkpoint_callback = CheckpointCallback(
@@ -160,7 +179,8 @@ def train_model(args):
     model.learn(
         total_timesteps=args.timesteps,
         callback=checkpoint_callback,
-        progress_bar=True
+        progress_bar=True,
+        reset_num_timesteps=not args.resume  # Keep timestep counter if resuming
     )
     
     # Save
@@ -184,6 +204,8 @@ def main():
                         help='PPO learning rate')
     parser.add_argument('--data-dir', type=str, default=None,
                         help='Override data directory')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to checkpoint to resume training from')
     
     args = parser.parse_args()
     
