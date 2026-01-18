@@ -56,14 +56,22 @@ class TradingEnv(gym.Env):
         super().reset(seed=seed)
         
         self.current_step = 0
-        self.balance = self.initial_balance
-        self.position = 0.0
+        
+        # CRITICAL FIX: Start with BALANCED portfolio (50/50)
+        # This gives BUY and SELL equal opportunity from the start
+        initial_price = self.df.iloc[0]['close']
+        
+        # Split initial balance 50/50 between cash and position
+        self.balance = self.initial_balance * 0.5  # 50% cash
+        position_value = self.initial_balance * 0.5  # 50% in asset  
+        self.position = position_value / initial_price  # Convert to units
+        
+        # Start equity = balance + position value
         self.equity = self.initial_balance
         self.trades_history = []
         
-        # Random start index if data is large enough for variety?
-        # For now, start at 0 (or strictly start after window size if we use window)
-        # But our DF is already stripped of NaNs, so safe to start at 0
+        # Log initial state
+        print(f"🔄 Reset: Balance=${self.balance:.2f}, Position={self.position:.4f} units @ ${initial_price:.2f}")
         
         return self._get_observation(), {}
 
@@ -83,55 +91,60 @@ class TradingEnv(gym.Env):
     def step(self, action):
         current_price = self.df.iloc[self.current_step]['close']
         
-        # Execute Action
-        # Simplification: All-in Buy/Sell for now to train basic logic
-        # OR Fixed Size. Let's do fixed size for stability: 0.1 units (assuming like crypto/forex)
-        # Or better: Spend 10% of balance (Buying) / Sell 100% of position (Selling)
-           
+        # Position limits (prevent unlimited positions)
+        MAX_POSITION_VALUE = self.initial_balance * 2.0  # Max 2x initial balance in position
+        current_position_value = abs(self.position * current_price)
+        
         reward = 0
         prev_equity = self.equity
-        
         trade_info = None
         
-        if action == 1: # BUY
-            # Can only buy if we have balance
-            if self.balance > 0:
-                # Buy as much as possible? Or fixed amount?
-                # Let's say we buy with 99% of balance (minus fee placeholder)
-                cost = self.balance
-                fee = cost * 0.001 # 0.1% fee
+        if action == 1:  # BUY
+            # Can only buy if we have balance AND not over position limit
+            if self.balance > 0 and current_position_value < MAX_POSITION_VALUE:
+                # Use 99% of balance (keep 1% buffer)
+                cost = self.balance * 0.99
+                fee = cost * 0.001  # 0.1% transaction fee
                 invest_amount = cost - fee
                 
                 if invest_amount > 0:
                     units = invest_amount / current_price
                     self.position += units
-                    self.balance = 0 # Spent all
+                    self.balance -= cost
                     trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
                     
-        elif action == 2: # SELL
+        elif action == 2:  # SELL
             # Can only sell if we have position
             if self.position > 0:
+                # Sell all position
                 revenue = self.position * current_price
-                fee = revenue * 0.001
+                fee = revenue * 0.001  # 0.1% transaction fee
                 self.balance += (revenue - fee)
+                sold_units = self.position
                 self.position = 0
-                trade_info = {'action': 'SELL', 'price': current_price, 'units': 0}
-
+                trade_info = {'action': 'SELL', 'price': current_price, 'units': sold_units}
+        
         # Update Step
         self.current_step += 1
         
         # Calculate Equity
-        self.equity = self.balance + (self.position * self.df.iloc[self.current_step]['close'] if self.current_step < len(self.df) else 0)
-        
-        # Reward: Change in equity (Log return is better for training stability)
-        # reward = self.equity - prev_equity
-        # Using Log Return: ln(current_equity / prev_equity)
-        # Handle zero division just in case
-        if prev_equity > 0:
-             reward = np.log(self.equity / prev_equity)
+        if self.current_step < len(self.df):
+            next_price = self.df.iloc[self.current_step]['close']
+            self.equity = self.balance + (self.position * next_price)
         else:
-             reward = 0
-
+            self.equity = self.balance + (self.position * current_price)
+        
+        # Reward: Log return (better for training stability)
+        if prev_equity > 0:
+            reward = np.log(self.equity / prev_equity)
+        else:
+            reward = 0
+        
+        # Penalty for holding too much or too little (encourage balanced portfolio)
+        portfolio_imbalance = abs(self.balance - (self.position * current_price))
+        if portfolio_imbalance > self.initial_balance * 0.8:  # Very unbalanced
+            reward -= 0.01  # Small penalty
+        
         # Terminate
         done = False
         truncated = False
