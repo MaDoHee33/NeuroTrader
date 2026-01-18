@@ -117,12 +117,12 @@ def run_backtest(args):
         base_currency=USD,
         quote_currency=USD,
         price_precision=3,
-        size_precision=2,
+        size_precision=0,  # Match data volume precision
         price_increment=Price(0.001, 3),
-        size_increment=Quantity(0.01, 2),
+        size_increment=Quantity(1, 0),  # Match precision
         lot_size=None,
-        max_quantity=Quantity(1000, 2),
-        min_quantity=Quantity(0.01, 2),
+        max_quantity=Quantity(1000, 0),
+        min_quantity=Quantity(1, 0),
         max_notional=None,
         min_notional=None,
         max_price=None,
