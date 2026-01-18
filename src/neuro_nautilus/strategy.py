@@ -8,7 +8,7 @@ from src.neuro_nautilus.config import NeuroNautilusConfig
 import asyncio
 
 class NeuroBridgeStrategy(Strategy):
-    def __init__(self(self, config: NeuroNautilusConfig):
+    def __init__(self, config: NeuroNautilusConfig):
         super().__init__(config)
         self.instrument_id = config.instrument_id
         

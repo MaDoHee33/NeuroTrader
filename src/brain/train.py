@@ -95,8 +95,28 @@ def load_data(data_path, bar_type_str):
     print(f"📂 Loading from: {data_path}")
     print(f"📊 Bar Type: {bar_type_str}")
     
+    # DEBUG: Check path
+    import os
+    if not os.path.exists(data_path):
+        print(f"❌ ERROR: Path does not exist!")
+        print(f"   Looking for: {data_path}")
+        raise FileNotFoundError(f"Path not found: {data_path}")
+    print(f"✅ Path exists")
+    
     catalog = ParquetDataCatalog(str(data_path))
+    
+    # DEBUG: Show what's available
+    try:
+        print(f"\n🔍 Catalog contents:")
+        instruments = list(catalog.instruments())
+        print(f"   Instruments: {[str(i.id) for i in instruments[:5]]}")
+        bar_types_available = list(catalog.bar_types())
+        print(f"   Bar types: {[str(bt) for bt in bar_types_available[:5]]}")
+    except Exception as e:
+        print(f"⚠️  Could not inspect catalog: {e}")
+    
     bar_type = BarType.from_str(bar_type_str)
+    print(f"\n🎯 Requesting bar_type: {bar_type}")
     
     bars = list(catalog.bars(bar_types=[bar_type]))
     print(f"✅ Loaded {len(bars):,} bars")
