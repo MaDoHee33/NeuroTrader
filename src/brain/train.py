@@ -26,12 +26,24 @@ def setup_colab():
     """Mount Google Drive and clone repo if needed"""
     if not is_colab():
         return None
-        
-    from google.colab import drive
-    drive.mount('/content/drive')
+    
+    # Check if Drive is already mounted
+    drive_path = '/content/drive'
+    if not os.path.exists(f'{drive_path}/MyDrive'):
+        try:
+            from google.colab import drive
+            print("📂 Mounting Google Drive...")
+            drive.mount(drive_path)
+        except Exception as e:
+            print(f"⚠️  Could not mount Drive automatically: {e}")
+            print("💡 Please mount Drive manually in the notebook before running this script.")
+            print("   Run this in a cell: from google.colab import drive; drive.mount('/content/drive')")
+            return None
+    else:
+        print("✅ Google Drive already mounted")
     
     # Define workspace path
-    workspace = '/content/drive/MyDrive/NeuroTrader_Workspace'
+    workspace = f'{drive_path}/MyDrive/NeuroTrader_Workspace'
     os.makedirs(workspace, exist_ok=True)
     
     # Clone repo if not exists
@@ -40,9 +52,12 @@ def setup_colab():
         print("📥 Cloning NeuroTrader repository...")
         os.system('git clone https://github.com/MaDoHee33/NeuroTrader.git /content/NeuroTrader')
         os.system('cd /content/NeuroTrader && git checkout neuronautilus-v1')
+    else:
+        print("✅ Repository already cloned")
     
     # Add to path
-    sys.path.insert(0, repo_path)
+    if repo_path not in sys.path:
+        sys.path.insert(0, repo_path)
     
     return workspace
 
