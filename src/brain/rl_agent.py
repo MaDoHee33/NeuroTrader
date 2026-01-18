@@ -5,6 +5,8 @@ import pandas as pd
 from collections import deque
 from stable_baselines3 import PPO
 import os
+from pathlib import Path
+import glob
 
 from src.brain.feature_eng import add_features
 
@@ -15,101 +17,118 @@ class RLAgent:
         self.model = None
         
         # History buffer for feature engineering
-        # Needs at least 50-100 bars for EMA50/MACD etc.
         self.history_size = 100 
         self.history = deque(maxlen=self.history_size)
         
         self._load_model()
-
+    
+    def _find_available_models(self, search_dir):
+        """Find all available model files in directory"""
+        search_path = Path(search_dir)
+        if not search_path.exists():
+            return []
+        
+        # Search for .zip files
+        models = list(search_path.glob("*.zip"))
+        # Sort by modification time (newest first)
+        models.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        return models
+    
     def _load_model(self):
+        """Smart model loading with auto-discovery"""
+        print(f"🔍 RLAgent: Looking for model at {self.model_path}")
+        
         if os.path.exists(self.model_path):
             try:
-                print(f"🧠 RLAgent: Loading model from {self.model_path}")
+                print(f"✅ RLAgent: Loading model from {self.model_path}")
                 self.model = PPO.load(self.model_path)
+                print(f"🧠 RLAgent: Model loaded successfully!")
+                return
             except Exception as e:
-                print(f"❌ RLAgent: Failed to load model: {e}")
-        else:
-            print(f"⚠️ RLAgent: Model not found at {self.model_path}. Agent will act randomly or HOLD.")
-
-    async def decide(self, market_data: dict, sentiment: dict, forecast: dict, portfolio_state: dict = None):
-        """
-        Main decision method.
-        market_data: {close, volume, high, low, open, timestamp}
-        """
-        # 1. Update History
-        self.history.append(market_data)
+                print(f"❌ RLAgent: Error loading model: {e}")
         
-        # 2. Warmup Check
-        if len(self.history) < 60: # Need at least 50 for EMA + safety buffer
-            # Return HOLD (0) or Random until we have enough data
-            return {"action": "HOLD", "volume": 0.0}
-
-        # 3. Feature Engineering (State Construction)
-        try:
-            df = pd.DataFrame(list(self.history))
-            df = df.sort_values('timestamp') # Ensure order
+        # Model not found - try smart discovery
+        print(f"⚠️  RLAgent: Model not found at {self.model_path}")
+        
+        # Search in checkpoints directory
+        model_dir = Path(self.model_path).parent
+        available_models = self._find_available_models(model_dir)
+        
+        if available_models:
+            print(f"\n💡 Found {len(available_models)} model(s) in {model_dir}:")
+            for i, model in enumerate(available_models[:5], 1):  # Show max 5
+                size_mb = model.stat().st_size / (1024 * 1024)
+                print(f"   {i}. {model.name} ({size_mb:.1f} MB)")
             
-            # This adds rsi, macd, etc. 
-            # Note: add_features DROPS rows with NaNs.
-            # So if we have 60 rows, we might end up with just 1 or 2 valid rows at the end.
+            # Auto-load latest
+            latest_model = available_models[0]
+            print(f"\n🤖 Auto-loading latest model: {latest_model.name}")
+            try:
+                self.model = PPO.load(str(latest_model))
+                self.model_path = str(latest_model)  # Update path
+                print(f"✅ Model loaded successfully!")
+                return
+            except Exception as e:
+                print(f"❌ Error loading model: {e}")
+        else:
+            print(f"❌ No models found in {model_dir}")
+            print(f"💡 Tip: Train a model first with: python -m src.brain.train")
+        
+        print(f"⚠️  Agent will act randomly (untrained)")
+        self.model = None
+
+    def decide_action(self, observation, portfolio_state=None):
+        """
+        Make trading decision based on observation
+        Returns: 0 (HOLD), 1 (BUY), 2 (SELL)
+        """
+        if self.model is None:
+            # Random fallback if no model
+            return np.random.choice([0, 1, 2])
+        
+        try:
+            # Use the trained model
+            action, _ = self.model.predict(observation, deterministic=True)
+            return int(action)
+        except Exception as e:
+            print(f"❌ RLAgent: Error in prediction: {e}")
+            return 0  # HOLD on error
+
+    def process_bar(self, bar_dict, portfolio_state=None):
+        """
+        Process incoming bar and return trading action
+        """
+        # Add to history
+        self.history.append(bar_dict)
+        
+        # Need enough history for features
+        if len(self.history) < 60:  # Warmup period
+            return 0  # HOLD during warmup
+        
+        # Convert history to DataFrame
+        df = pd.DataFrame(list(self.history))
+        
+        # Feature engineering
+        try:
             df_features = add_features(df)
             
-            if df_features.empty:
-                # Not enough valid data yet
-                return {"action": "HOLD"}
-            
-            # Get the very last row (most recent observation)
-            last_row = df_features.iloc[-1]
-            
-            # Construct observation vector matching TradingEnv
-            # self.feature_cols + balance + position
-            # Note: We need to know the 'Balance' and 'Position' state from the environment/strategy.
-            # Currently 'market_data' doesn't include portfolio state.
-            # FIXME: Strategy needs to pass portfolio state!
-            
-            # For now, let's assume fully invested or something fixed, 
-            # OR request strategy to pass this info.
-            # To avoid breaking interface now, let's use placeholders 
-            # provided by market_data if available, or static assumptions.
-            
-            # Ideally, NeuroBridgeStrategy should pass 'portfolio': {'balance': ..., 'position': ...}
-            # Let's check keys in last_row:
-            # ['close', 'rsi', 'macd', 'macd_signal', 'bb_high', 'bb_low', 'ema_20', 'ema_50', 'atr', 'log_ret_lag_1'...]
-            
-            required_cols = [
-                'close', 'rsi', 'macd', 'macd_signal', 
-                'bb_high', 'bb_low', 'ema_20', 'ema_50',
-                'atr', 'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
-            ]
-            
-            # Filter just the feature columns
-            obs_features = last_row[required_cols].values.astype(np.float32)
-            
-            # Add Balance/Position
-            if portfolio_state:
-                balance = portfolio_state.get('balance', 10000.0)
-                position = portfolio_state.get('position', 0.0)
-            else:
-                balance = 10000.0 # Mock
-                position = 0.0    # Mock
-            
-            obs = np.concatenate([obs_features, [balance, position]])
-            
-            # 4. Predict
-            if self.model:
-                action_idx, _ = self.model.predict(obs, deterministic=True)
-                # Action Map: 0=HOLD, 1=BUY, 2=SELL
-                action_map = {0: "HOLD", 1: "BUY", 2: "SELL"}
-                action_str = action_map.get(int(action_idx), "HOLD")
+            # Get latest observation
+            if len(df_features) > 0:
+                latest = df_features.iloc[-1]
                 
-                return {
-                    "action": action_str,
-                    "volume": 0.02, # Fixed small size for safety
-                    "raw_action": int(action_idx)
-                }
-            else:
-                return {"action": "HOLD"} # No model loaded
+                # Create observation vector (matching training env)
+                obs = latest[['rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower', 
+                             'ema_20', 'atr', 'log_return']].values.astype(np.float32)
                 
+                # Add portfolio state if provided
+                if portfolio_state:
+                    balance = portfolio_state.get('balance', 10000.0)
+                    position = portfolio_state.get('position', 0.0)
+                    obs = np.append(obs, [balance / 10000.0, position])  # Normalize
+                
+                return self.decide_action(obs, portfolio_state)
+            else:
+                return 0  # HOLD if feature engineering fails
         except Exception as e:
-            print(f"RLAgent Error: {e}")
-            return {"action": "HOLD"}
+            print(f"❌ RLAgent: Error processing bar: {e}")
+            return 0  # HOLD on error
