@@ -32,16 +32,6 @@ class NeuroBridgeStrategy(Strategy):
         self.log.info(f"Subscribed to {bar_type}")
 
     def on_bar(self, bar: Bar):
-        # self.log.info(f"DEBUG: on_bar {bar}") 
-        # 1. Adapt Data
-        # Simplified observation: just close price for now + dummy sentiment
-        # In real scenario, we would build a full DataFrame buffer here
-        market_data = {
-            "close": bar.close.as_double(),
-            "volume": bar.volume.as_double(),
-            "high": bar.high.as_double(),
-            "low": bar.low.as_double(),
-            "open": bar.open.as_double(),
         # Convert Bar to dict for agent
         bar_dict = {
             'timestamp': bar.ts_init,
