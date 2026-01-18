@@ -6,6 +6,9 @@ import pandas as pd
 import numpy as np
 import argparse
 from pathlib import Path
+import matplotlib
+# Force Agg backend to prevent Colab display errors
+matplotlib.use('Agg')
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO # For Level 2+
 
