@@ -80,16 +80,16 @@ class NeuroBridgeStrategy(Strategy):
         
         # Get agent decision using process_bar
         try:
-            decision = self.agent.process_bar(bar_dict, portfolio_state)
+            action = self.agent.process_bar(bar_dict, portfolio_state)
+            # process_bar returns int directly (0=HOLD, 1=BUY, 2=SELL)
         except Exception as e:
             self.log.error(f"Agent failed to decide: {e}")
             return
+        
+        # 3. Execute based on action
+        volume = 0.01 # Default volume for trades
 
-        # 3. Execute
-        action = decision.get("action")
-        volume = decision.get("volume", 0.01)
-
-        if action == "BUY":
+        if action == 1:  # BUY
             self.log.info(f"🤖 Agent says BUY at {bar.close}")
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,

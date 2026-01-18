@@ -47,31 +47,41 @@ class RLAgent:
             except Exception as e:
                 print(f"❌ RLAgent: Error loading model: {e}")
         
-        # Model not found - try smart discovery
+        # Model not found - try smart discovery in multiple locations
         print(f"⚠️  RLAgent: Model not found at {self.model_path}")
         
-        # Search in checkpoints directory
-        model_dir = Path(self.model_path).parent
-        available_models = self._find_available_models(model_dir)
+        # Search paths (in order of priority)
+        search_paths = [
+            Path(self.model_path).parent,  # Original path
+            Path("/content/drive/MyDrive/NeuroTrader_Workspace/models/checkpoints"),  # Colab Drive
+            Path("models/checkpoints"),  # Local relative
+        ]
+        
+        available_models = []
+        for search_dir in search_paths:
+            if search_dir.exists():
+                models = self._find_available_models(search_dir)
+                if models:
+                    available_models = models
+                    print(f"💡 Found {len(models)} model(s) in {search_dir}:")
+                    for i, model in enumerate(models[:5], 1):
+                        size_mb = model.stat().st_size / (1024 * 1024)
+                        print(f"   {i}. {model.name} ({size_mb:.1f} MB)")
+                    break
         
         if available_models:
-            print(f"\n💡 Found {len(available_models)} model(s) in {model_dir}:")
-            for i, model in enumerate(available_models[:5], 1):  # Show max 5
-                size_mb = model.stat().st_size / (1024 * 1024)
-                print(f"   {i}. {model.name} ({size_mb:.1f} MB)")
-            
             # Auto-load latest
             latest_model = available_models[0]
             print(f"\n🤖 Auto-loading latest model: {latest_model.name}")
             try:
                 self.model = PPO.load(str(latest_model))
-                self.model_path = str(latest_model)  # Update path
+                self.model_path = str(latest_model)
                 print(f"✅ Model loaded successfully!")
                 return
             except Exception as e:
                 print(f"❌ Error loading model: {e}")
         else:
-            print(f"❌ No models found in {model_dir}")
+            print(f"❌ No models found in any search location")
             print(f"💡 Tip: Train a model first with: python -m src.brain.train")
         
         print(f"⚠️  Agent will act randomly (untrained)")
