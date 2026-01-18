@@ -42,41 +42,41 @@ class NeuroBridgeStrategy(Strategy):
             'volume': bar.volume.as_double()
         }
         
-        # Get portfolio state
-        portfolio_state = {}
+        # Get portfolio state - simplified and robust
         try:
-            account = self.portfolio.account(venue=self.instrument_id.venue)
-            if account:
-                # Use method calls for balance
-                balances = account.balances()
-                if balances:
-                    balance = balances[0].free.as_double()
-                else:
-                    balance = 10000.0
-            else:
-                balance = 10000.0
-                
-            # Fix: Use net_position which is available in dir()
-            if hasattr(self.portfolio, 'net_position'):
-                pos_val = self.portfolio.net_position(self.instrument_id)
+            # Get balance
+            account = self.portfolio.account(self.instrument_id.venue)
+            balance = 10000.0  # Default
+            if account and hasattr(account, 'balance_total'):
                 try:
-                    if hasattr(pos_val, 'as_double'):
-                        position = pos_val.as_double()
-                    else:
-                        position = float(pos_val)
+                    balance_obj = account.balance_total(USD)
+                    if balance_obj:
+                        balance = float(balance_obj.as_double())
                 except:
-                    position = 0.0
-            else:
-                self.log.error(f"Portfolio has no 'net_position'. Dir: {dir(self.portfolio)}")
-                position = 0.0
-                
+                    pass
+            
+            # Get position
+            position = 0.0  # Default
+            if hasattr(self.portfolio, 'net_position'):
+                try:
+                    pos = self.portfolio.net_position(self.instrument_id)
+                    if pos and hasattr(pos, 'as_double'):
+                        position = float(pos.as_double())
+                    elif pos:
+                        position = float(pos)
+                except:
+                    pass
+            
             portfolio_state = {
                 'balance': balance,
                 'position': position
             }
         except Exception as e:
-            self.log.error(f"Error getting portfolio state: {e}")
-            portfolio_state = {'balance': 10000.0, 'position': 0.0}
+            # Fail gracefully with defaults
+            portfolio_state = {
+                'balance': 10000.0,
+                'position': 0.0
+            }
         
         # Get agent decision using process_bar
         try:

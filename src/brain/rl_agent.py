@@ -126,19 +126,32 @@ class RLAgent:
             if len(df_features) > 0:
                 latest = df_features.iloc[-1]
                 
-                # Create observation vector (matching training env)
-                obs = latest[['rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower', 
-                             'ema_20', 'atr', 'log_return']].values.astype(np.float32)
+                # Create observation vector - only use available features
+                feature_cols = ['rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower', 
+                               'ema_20', 'atr', 'log_return']
+                
+                # Filter to only existing columns
+                available_cols = [col for col in feature_cols if col in latest.index]
+                
+                if len(available_cols) < 5:  # Need minimum features
+                    return 0  # HOLD if not enough features
+                
+                obs = latest[available_cols].values.astype(np.float32)
+                
+                # Pad with zeros if needed (model expects fixed size)
+                if len(obs) < len(feature_cols):
+                    obs = np.pad(obs, (0, len(feature_cols) - len(obs)), 'constant')
                 
                 # Add portfolio state if provided
                 if portfolio_state:
                     balance = portfolio_state.get('balance', 10000.0)
                     position = portfolio_state.get('position', 0.0)
-                    obs = np.append(obs, [balance / 10000.0, position])  # Normalize
+                    obs = np.append(obs, [balance / 10000.0, position])
                 
                 return self.decide_action(obs, portfolio_state)
             else:
-                return 0  # HOLD if feature engineering fails
+                return 0
         except Exception as e:
-            print(f"❌ RLAgent: Error processing bar: {e}")
+            # Log error but don't crash
+            print(f"⚠️  RLAgent: Feature error - {e}")
             return 0  # HOLD on error
