@@ -23,5 +23,7 @@ discord.py
 streamlit
 plotly
 ollama
+nautilus_trader
+pyarrow
 
 
