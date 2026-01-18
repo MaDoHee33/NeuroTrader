@@ -126,27 +126,36 @@ class RLAgent:
             if len(df_features) > 0:
                 latest = df_features.iloc[-1]
                 
-                # Create observation vector - only use available features
-                feature_cols = ['rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower', 
-                               'ema_20', 'atr', 'log_return']
+                # CRITICAL: Must match training env observation space (15 features)
+                # Training env uses: 8 technical + 7 price features = 15 total
+                feature_cols = [
+                    'rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower',
+                    'ema_20', 'atr', 'log_return',  # 8 technical
+                    'close', 'open', 'high', 'low', 'volume',  # 5 price
+                    'normalized_close', 'normalized_volume'  # 2 normalized
+                ]
                 
-                # Filter to only existing columns
-                available_cols = [col for col in feature_cols if col in latest.index]
+                # Build observation vector
+                obs_values = []
+                for col in feature_cols:
+                    if col in latest.index:
+                        obs_values.append(float(latest[col]))
+                    elif col == 'normalized_close':
+                        # Fallback: normalize close
+                        obs_values.append(float(latest.get('close', 0)) / 2000.0)
+                    elif col == 'normalized_volume':
+                        # Fallback: normalize volume
+                        obs_values.append(float(latest.get('volume', 0)) / 100000.0)
+                    else:
+                        obs_values.append(0.0)  # Missing feature
                 
-                if len(available_cols) < 5:  # Need minimum features
-                    return 0  # HOLD if not enough features
+                obs = np.array(obs_values, dtype=np.float32)
                 
-                obs = latest[available_cols].values.astype(np.float32)
-                
-                # Pad with zeros if needed (model expects fixed size)
-                if len(obs) < len(feature_cols):
-                    obs = np.pad(obs, (0, len(feature_cols) - len(obs)), 'constant')
-                
-                # Add portfolio state if provided
-                if portfolio_state:
-                    balance = portfolio_state.get('balance', 10000.0)
-                    position = portfolio_state.get('position', 0.0)
-                    obs = np.append(obs, [balance / 10000.0, position])
+                # Ensure exactly 15 features
+                if len(obs) < 15:
+                    obs = np.pad(obs, (0, 15 - len(obs)), 'constant')
+                elif len(obs) > 15:
+                    obs = obs[:15]
                 
                 return self.decide_action(obs, portfolio_state)
             else:

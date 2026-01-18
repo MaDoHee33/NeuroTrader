@@ -87,7 +87,7 @@ class NeuroBridgeStrategy(Strategy):
             return
         
         # 3. Execute based on action
-        volume = 0.01 # Default volume for trades
+        volume = 1  # Match size_precision=0 (minimum is 1)
 
         if action == 1:  # BUY
             self.log.info(f"🤖 Agent says BUY at {bar.close}")
