@@ -9,9 +9,9 @@ import os
 from src.brain.feature_eng import add_features
 
 class RLAgent:
-    def __init__(self, config=None):
+    def __init__(self, config=None, model_path=None):
         self.config = config or {}
-        self.model_path = "models/checkpoints/ppo_neurotrader.zip"
+        self.model_path = model_path or "models/checkpoints/ppo_neurotrader.zip"
         self.model = None
         
         # History buffer for feature engineering

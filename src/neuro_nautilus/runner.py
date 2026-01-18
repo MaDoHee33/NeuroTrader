@@ -1,54 +1,120 @@
+#!/usr/bin/env python3
+"""
+NeuroNautilus Backtest Runner
+Supports both Local and Colab environments with automatic logging
+"""
+
 import logging
-from decimal import Decimal
+import argparse
+import sys
 import os
-import shutil
+from decimal import Decimal
+from datetime import datetime
+from pathlib import Path
 
 from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig
-from nautilus_trader.model.identifiers import Venue, InstrumentId
+from nautilus_trader.model.identifiers import Venue, InstrumentId, Symbol
 from nautilus_trader.model.data import Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import AccountType, OmsType, BarAggregation, PriceType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Money, Price, Quantity
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.config import LoggingConfig
 
 from src.neuro_nautilus.config import NeuroNautilusConfig
 from src.neuro_nautilus.strategy import NeuroBridgeStrategy
 
-def run_backtest():
-    # 1. Config
-    logger = logging.getLogger("runner")
+# Environment Detection
+def is_colab():
+    try:
+        import google.colab
+        return True
+    except:
+        return False
+
+def setup_logging(log_path=None):
+    """Setup logging to both console and file"""
+    if log_path is None:
+        # Auto-generate log filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_dir = Path("logs/backtest")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"backtest_{timestamp}.log"
+    
+    # Create logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(message)s')
+    console_handler.setFormatter(console_formatter)
+    
+    # File handler
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    
+    return log_path
+
+def get_default_paths():
+    """Get default paths based on environment"""
+    if is_colab():
+        workspace = "/content/drive/MyDrive/NeuroTrader_Workspace"
+        return {
+            'data': f"{workspace}/data/nautilus_catalog",
+            'model': f"{workspace}/models/checkpoints/ppo_neurotrader.zip",
+            'logs': f"{workspace}/logs/backtest"
+        }
+    else:
+        base = Path(__file__).resolve().parent.parent.parent
+        return {
+            'data': str(base / "data" / "nautilus_catalog"),
+            'model': str(base / "models" / "checkpoints" / "ppo_neurotrader.zip"),
+            'logs': str(base / "logs" / "backtest")
+        }
+
+def run_backtest(args):
+    """Main backtest execution function"""
+    
+    # Setup logging
+    log_path = setup_logging(args.log_path)
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"{'='*60}")
+    logger.info(f"🧠 NeuroNautilus Backtest")
+    logger.info(f"📍 Environment: {'Colab' if is_colab() else 'Local'}")
+    logger.info(f"📝 Log file: {log_path}")
+    logger.info(f"{'='*60}\n")
     
     # Configure Backtest Engine
     engine_config = BacktestEngineConfig(
         trader_id="NEURO-BOT-01",
-        logging=LoggingConfig(log_level="INFO")
+        logging=LoggingConfig(log_level=args.log_level)
     )
     engine = BacktestEngine(config=engine_config)
 
-    # 2. Setup Venue & Account
+    # Setup Venue & Account
     venue = Venue("SIM")
     engine.add_venue(
         venue=venue,
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=USD,
-        starting_balances=[Money("10_000.00", USD)]
+        starting_balances=[Money(args.initial_balance, USD)]
     )
 
-    # Manually define instrument to match data precision (3 decimals for XAUUSD usually)
-    from nautilus_trader.model.instruments import CurrencyPair
-    from nautilus_trader.model.identifiers import Symbol
-    from nautilus_trader.model.objects import Price, Quantity
-    
+    # Define instrument
     instrument = CurrencyPair(
-        instrument_id=InstrumentId(
-            symbol=Symbol("XAUUSD"),
-            venue=venue,
-        ),
+        instrument_id=InstrumentId(Symbol("XAUUSD"), venue),
         raw_symbol=Symbol("XAUUSD"),
-        base_currency=USD, # Simplified
+        base_currency=USD,
         quote_currency=USD,
         price_precision=3,
         size_precision=2,
@@ -70,66 +136,78 @@ def run_backtest():
     )
     engine.add_instrument(instrument)
 
-    # 4. Load Data (Parquet)
-    # catalog = ParquetDataCatalog("data/nautilus_store")
-    # But wait! We need to make sure the Instrument ID matches what we saved.
-    # Our migration script saved as "XAUUSDmD1.SIM" (example) or similar based on filename behavior.
-    # Let's check what files we have first.
+    # Load Data
+    logger.info(f"📂 Loading data from: {args.data_dir}")
+    logger.info(f"📊 Bar type: {args.bar_type}")
     
-    data_path = "data/nautilus_store"
-    catalog = ParquetDataCatalog(data_path)
+    catalog = ParquetDataCatalog(args.data_dir)
+    bar_type = BarType.from_str(f"{args.bar_type}")
     
-    # Let's try to autoload just to verify
-    # For this script to be robust, let's explicitly look for our migrated file
-    # Or just use the catalog to stream
-    
-    # 5. Add Strategy
-    config = NeuroNautilusConfig(
-        instrument_id=instrument.id,
-        bar_type="5-MINUTE-LAST", # Must match data
-    )
-    
-    strategy_id = engine.add_strategy(
-        strategy=NeuroBridgeStrategy(config),
-    )
-
-    # 6. Run
-    print("🚀 Running NeuroNautilus Backtest...")
-    
-    # We need to manually load bars into the engine because just pointing to catalog 
-    # normally requires the strategy to subscribe or we add data to engine.
-    # The simplest way is to read from catalog and add to engine.
-    
-    # Loading ALL bars from catalog for this instrument
-    # We need to know the specific bar type we saved.
-    # Our migration script used: 5-MINUTE-LAST for M5
-    
-    bar_spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
-    bar_type = BarType(instrument.id, bar_spec)
-    
-    print(f"🔎 Looking for BarType: {bar_type}")
-    
-    # Try reading from catalog
     try:
-        bars = list(catalog.bars(bar_types=[bar_type])) 
+        bars = list(catalog.bars(bar_types=[bar_type]))
         if not bars:
-             # Fallback: Trying to list what IS there
-             print("⚠️ No bars found for exact match. Checking catalog...")
-             # (In a real script we would iterate instruments)
-             # For this test, let's just make sure we use the data we migrated.
-             pass
-        else:
-            print(f"📦 Loaded {len(bars)} bars.")
-            engine.add_data(bars)
+            logger.error(f"❌ No bars found for {bar_type}")
+            logger.info("💡 Available bar types:")
+            # Try to list what's available (simplified)
+            return
+        
+        logger.info(f"✅ Loaded {len(bars):,} bars")
+        logger.info(f"   First bar: {bars[0].ts_init}")
+        logger.info(f"   Last bar: {bars[-1].ts_init}")
+        engine.add_data(bars)
     except Exception as e:
-        print(f"❌ Error loading data: {e}")
+        logger.error(f"❌ Error loading data: {e}")
         return
 
+    # Add Strategy
+    config = NeuroNautilusConfig(
+        instrument_id=instrument.id,
+        bar_type=args.bar_type.split('-')[1] + "-" + args.bar_type.split('-')[2] + "-" + args.bar_type.split('-')[3],
+        model_path=args.model_path
+    )
+    
+    strategy = NeuroBridgeStrategy(config)
+    engine.add_strategy(strategy=strategy)
+
+    # Run backtest
+    logger.info("\n🏃 Starting backtest...\n")
     engine.run()
     
-    # 7. Results
-    print("🏁 Backtest Complete.")
+    # Results
+    logger.info("\n🏁 Backtest Complete!")
+    logger.info(f"\n{'='*60}")
+    logger.info("📊 RESULTS SUMMARY")
+    logger.info(f"{'='*60}")
+    
     engine.trader.generate_account_report(venue)
     
+    logger.info(f"\n💾 Full log saved to: {log_path}")
+    
+    return engine
+
+def main():
+    parser = argparse.ArgumentParser(description='Run NeuroNautilus Backtest')
+    
+    defaults = get_default_paths()
+    
+    parser.add_argument('--data-dir', type=str, default=defaults['data'],
+                        help='Path to Nautilus data catalog')
+    parser.add_argument('--model-path', type=str, default=defaults['model'],
+                        help='Path to trained model (.zip file)')
+    parser.add_argument('--bar-type', type=str, 
+                        default='XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL',
+                        help='Bar type to backtest (e.g., XAUUSD.SIM-5-MINUTE-LAST-EXTERNAL)')
+    parser.add_argument('--initial-balance', type=str, default="10000.00",
+                        help='Starting account balance')
+    parser.add_argument('--log-level', type=str, default='INFO',
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                        help='Logging level')
+    parser.add_argument('--log-path', type=str, default=None,
+                        help='Custom log file path (auto-generated if not specified)')
+    
+    args = parser.parse_args()
+    
+    run_backtest(args)
+
 if __name__ == "__main__":
-    run_backtest()
+    main()

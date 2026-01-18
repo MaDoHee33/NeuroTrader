@@ -1,0 +1,72 @@
+🚀 Starting Migration: data/raw -> data/nautilus_store
+Processing data/raw/XAUUSDm_D1.csv...
+  Loaded 3,695 rows
+Detected: XAUUSD 1 14
+✅ Saved 3695 bars for XAUUSD
+Processing data/raw/XAUUSDm_M5.csv...
+  Loaded 617,450 rows
+Detected: XAUUSD 5 12
+✅ Saved 617450 bars for XAUUSD
+Processing data/raw/BTCUSDm_M1.csv...
+  Loaded 4,160,217 rows
+Detected: BTCUSD 1 12
+✅ Saved 4160217 bars for BTCUSD
+Processing data/raw/BTCUSDm_M5.csv...
+  Loaded 832,284 rows
+Detected: BTCUSD 5 12
+✅ Saved 832284 bars for BTCUSD
+Processing data/raw/BTCUSDm_M15.csv...
+  Loaded 277,503 rows
+Detected: BTCUSD 15 12
+✅ Saved 277503 bars for BTCUSD
+Processing data/raw/BTCUSDm_MN1.csv...
+  Loaded 96 rows
+❌ Error processing data/raw/BTCUSDm_MN1.csv: invalid literal for int() with base 10: 'N1'
+Processing data/raw/XAUUSDm_W1.csv...
+  Loaded 627 rows
+Detected: XAUUSD 1 12
+✅ Saved 627 bars for XAUUSD
+Processing data/raw/XAUUSDm_M15.csv...
+  Loaded 207,289 rows
+Detected: XAUUSD 15 12
+✅ Saved 207289 bars for XAUUSD
+Processing data/raw/XAUUSDm_M30.csv...
+  Loaded 104,655 rows
+Detected: XAUUSD 30 12
+✅ Saved 104655 bars for XAUUSD
+Processing data/raw/XAUUSDm_M1.csv...
+  Loaded 3,074,008 rows
+Detected: XAUUSD 1 12
+❌ Error processing data/raw/XAUUSDm_M1.csv: Intervals are not disjoint after writing a new file
+Processing data/raw/BTCUSDm_W1.csv...
+  Loaded 415 rows
+Detected: BTCUSD 1 12
+❌ Error processing data/raw/BTCUSDm_W1.csv: Intervals are not disjoint after writing a new file
+Processing data/raw/BTCUSDm_H4.csv...
+  Loaded 17,367 rows
+Detected: BTCUSD 4 13
+✅ Saved 17367 bars for BTCUSD
+Processing data/raw/XAUUSDm_MN1.csv...
+  Loaded 145 rows
+❌ Error processing data/raw/XAUUSDm_MN1.csv: invalid literal for int() with base 10: 'N1'
+Processing data/raw/BTCUSDm_H1.csv...
+  Loaded 69,401 rows
+Detected: BTCUSD 1 13
+✅ Saved 69401 bars for BTCUSD
+Processing data/raw/BTCUSDm_M30.csv...
+  Loaded 138,774 rows
+Detected: BTCUSD 30 12
+✅ Saved 138774 bars for BTCUSD
+Processing data/raw/BTCUSDm_D1.csv...
+  Loaded 2,899 rows
+Detected: BTCUSD 1 14
+✅ Saved 2899 bars for BTCUSD
+Processing data/raw/XAUUSDm_H4.csv...
+  Loaded 15,133 rows
+Detected: XAUUSD 4 13
+✅ Saved 15133 bars for XAUUSD
+Processing data/raw/XAUUSDm_H1.csv...
+  Loaded 53,336 rows
+Detected: XAUUSD 1 13
+✅ Saved 53336 bars for XAUUSD
+✨ Migration Complete!
