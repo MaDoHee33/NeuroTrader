@@ -98,8 +98,7 @@ class NeuroBridgeStrategy(Strategy):
                 time_in_force=TimeInForce.GTC
             )
             self.submit_order(order)
-            
-        elif action == "SELL":
+        elif action == 2:  # SELL
             self.log.info(f"🤖 Agent says SELL at {bar.close}")
              # Check if we have position first? (Nautilus handles net positions, but let's be safe)
             order = self.order_factory.market(
@@ -109,3 +108,4 @@ class NeuroBridgeStrategy(Strategy):
                 time_in_force=TimeInForce.GTC
             )
             self.submit_order(order)
+        # else: HOLD (action == 0)
