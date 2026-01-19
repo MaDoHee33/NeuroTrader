@@ -36,18 +36,52 @@ async def update_data():
          return
 
     try:
-        for symbol in symbols:
-            print(f"\n🪙 Processing {symbol}...")
+        for base_symbol in symbols:
+            print(f"\n🪙 Processing {base_symbol}...")
+            
+            # Logic to find the correct broker symbol (e.g. XAUUSD vs XAUUSDm)
+            # We try base, then base+'m', then base+'c' (common suffixes)
+            found_symbol = None
+            suffixes_to_try = ['', 'm', 'c', 'pro', '.a']
+            
+            # Quick check to see which one works (using M1 as probe)
+            # However, MT5 copy_rates_from needs 'timeframe' which is passed in loop
+            # We will just iterate suffixes inside the logic or pre-check?
+            
+            # Better approach: Try to fetch for the first timeframe, if fail, try next suffix.
+            # Once found, use that suffix for all other timeframes of this symbol.
+            
+            active_suffix = ""
+            
+            # Probe check
+            for suffix in suffixes_to_try:
+                probe_sym = f"{base_symbol}{suffix}"
+                # Just check if symbol exists in MT5 usually via symbol_info() but wait... 
+                # driver doesn't expose symbol_info directly efficiently for us without async overhead?
+                # We can just try fetch M1 count=1
+                probe = await driver.fetch_history(symbol=probe_sym, timeframe="M1", count=1)
+                if probe is not None and not probe.empty:
+                    found_symbol = probe_sym
+                    active_suffix = suffix
+                    print(f"   ✅ Detected Broker Symbol: {found_symbol}")
+                    break
+            
+            if not found_symbol:
+                print(f"   ❌ Could not find valid symbol for {base_symbol} (Tried: {suffixes_to_try})")
+                print("      Please ensure the symbol is in Market Watch!")
+                continue
+
             for tf in timeframes:
-                print(f"  🔄 Fetching {tf}...", end=" ", flush=True)
+                print(f"  🔄 Fetching {found_symbol} {tf}...", end=" ", flush=True)
                 
                 # Fetch recent history (adjust count as needed, e.g. 10000)
-                df = await driver.fetch_history(symbol=symbol, timeframe=tf, count=10000)
+                df = await driver.fetch_history(symbol=found_symbol, timeframe=tf, count=10000)
                 
                 if df is not None and not df.empty:
                     # Format for Nautilus (Optional, but good practice to have raw parquet)
                     # Name format: SYMBOL.SIM-TF-LAST-EXTERNAL.parquet
-                    # e.g. XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL.parquet (standardizing names)
+                    # Normalize name: Use base_symbol (XAUUSD) not found_symbol (XAUUSDm)
+                    # This ensures backtest config works without changing
                     
                     # Convert 'M15' -> '15-MINUTE'
                     tf_str = tf.upper()
@@ -70,7 +104,7 @@ async def update_data():
                          dur = '1'
                          unit = 'UNKNOWN'
                     
-                    filename = f"{symbol}.SIM-{dur}-{unit}-LAST-EXTERNAL.parquet" 
+                    filename = f"{base_symbol}.SIM-{dur}-{unit}-LAST-EXTERNAL.parquet" 
                     output_path = catalog_path / filename
 
                     # Ensure column names are lower case
