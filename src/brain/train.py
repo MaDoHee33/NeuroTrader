@@ -212,26 +212,69 @@ def train_model(args):
     
     print(f"   - Save Path: {model_path}")
     
-    # Checkpoint callback
+    # Checkpoint callback (save intermediate models)
     checkpoint_callback = CheckpointCallback(
-        save_freq=10000,
-        save_path=str(paths['models']),
-        name_prefix='ppo_checkpoint'
+        save_freq=1_000_000,  # Save every 1M steps
+        save_path=str(paths['models'] / 'checkpoints'),
+        name_prefix='ppo_checkpoint',
+        save_replay_buffer=False,
+        verbose=1
     )
     
-    # Train
-    print(f"\n🏃 Training started...\n")
+    # Training
+    print(f"\n{'='*60}")
+    print(f"🏃 Starting Training")
+    print(f"{'='*60}")
+    print(f"⏱️  Estimated time: {args.timesteps / 1_000_000 * 30:.0f}-{args.timesteps / 1_000_000 * 60:.0f} minutes")
+    print(f"📊 Progress logged to: {paths['logs']}")
+    print(f"💾 Checkpoints saved to: {paths['models'] / 'checkpoints'}")
+    print()
+    
+    start_time = time.time()
+    
     model.learn(
         total_timesteps=args.timesteps,
         callback=checkpoint_callback,
-        progress_bar=True,
-        reset_num_timesteps=not args.resume  # Keep timestep counter if resuming
+        progress_bar=True
     )
     
-    # Save
-    print(f"\n💾 Saving model to {model_path}...")
-    model.save(str(model_path))
-    print("✅ Training complete!")
+    elapsed = time.time() - start_time
+    
+    print(f"\n✅ Training Complete!")
+    print(f"⏱️  Time elapsed: {elapsed/60:.1f} minutes ({elapsed/3600:.2f} hours)")
+    
+    # Save final model
+    final_model_path = model_path.with_suffix('.zip')
+    print(f"\n💾 Saving final model to: {final_model_path}")
+    model.save(final_model_path)
+    print(f"✅ Final model saved!")
+    
+    # AUTO-CLEANUP: Delete intermediate checkpoints
+    print(f"\n🧹 Cleaning up intermediate checkpoints...")
+    checkpoint_dir = paths['models'] / 'checkpoints'
+    if checkpoint_dir.exists():
+        deleted_count = 0
+        kept_files = []
+        
+        for checkpoint_file in checkpoint_dir.glob('ppo_checkpoint_*_steps.zip'):
+            try:
+                checkpoint_file.unlink()
+                deleted_count += 1
+                print(f"   🗑️  Deleted: {checkpoint_file.name}")
+            except Exception as e:
+                print(f"   ⚠️  Could not delete {checkpoint_file.name}: {e}")
+        
+        # List remaining files
+        remaining = list(checkpoint_dir.glob('*.zip'))
+        if remaining:
+            print(f"\n📁 Kept files in checkpoints folder:")
+            for f in remaining:
+                print(f"   ✅ {f.name}")
+        
+        print(f"\n✅ Cleanup complete! Deleted {deleted_count} intermediate checkpoint(s)")
+        print(f"💾 Final model kept at: {final_model_path}")
+    else:
+        print(f"   ⚠️  Checkpoint directory not found, skipping cleanup")
     
     return model
 
