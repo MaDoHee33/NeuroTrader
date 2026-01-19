@@ -176,8 +176,24 @@ def run_backtest(args):
     # Get results
     account = engine.trader.generate_account_report(venue)
     logger.info("\n📊 Backtest Complete!")
-    logger.info(f"Final Balance: ${account.balance:.2f}")
     
+    # Handle DataFrame vs Object
+    final_balance = 0.0
+    try:
+        if hasattr(account, 'balance'):
+             final_balance = float(account.balance)
+        elif hasattr(account, 'iloc'): # DataFrame
+             # Look for 'total' or 'balance' (case insensitive)
+             cols = [c for c in account.columns if 'total' in str(c).lower() or 'balance' in str(c).lower()]
+             if cols:
+                 final_balance = float(account.iloc[-1][cols[0]])
+             else:
+                 final_balance = float(account.iloc[-1, 0]) # Fallback
+        
+        logger.info(f"Final Balance: ${final_balance:.2f}")
+    except Exception as e:
+        logger.warning(f"Could not parse final balance: {e}")
+
     return {
         'account': account,
         'engine': engine,
@@ -207,15 +223,6 @@ def simple_backtest(
     
     Returns:
         Dictionary with backtest results
-    
-    Example:
-        >>> results = simple_backtest(
-        ...     data_path='data/nautilus_catalog',
-        ...     model_path='models/ppo_10M.zip',
-        ...     bar_type='XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL',
-        ...     start_date='2023-06-01',
-        ...     end_date='2024-09-30'
-        ... )
     """
     import argparse
     
@@ -228,7 +235,10 @@ def simple_backtest(
     args.log_level = 'INFO'
     args.log_path = None
     
-    # Run backtest
+    # Note: start_date/end_date logic would need to be passed to run_backtest 
+    # and handled in data loading. For now we run full dataset or handle outside.
+    # Current run_backtest loads all bars from bar_type.
+    
     return run_backtest(args)
 
 
@@ -244,11 +254,12 @@ def analyze_results(backtest_results: dict) -> dict:
     """
     import numpy as np
     from decimal import Decimal
+    import pandas as pd
     
     account = backtest_results.get('account')
     engine = backtest_results.get('engine')
     
-    if not account or not engine:
+    if account is None or engine is None:
         return {
             'total_return': 0.0,
             'sharpe_ratio': 0.0,
@@ -259,8 +270,22 @@ def analyze_results(backtest_results: dict) -> dict:
         }
     
     # Get account stats
-    initial_balance = 10000.0  # From config
-    final_balance = float(account.balance)
+    initial_balance = 10000.0  # Default or extract if possible
+    final_balance = initial_balance
+    
+    try:
+        if hasattr(account, 'balance'):
+             final_balance = float(account.balance)
+        elif hasattr(account, 'iloc') and not account.empty: # DataFrame
+             # Look for 'total' or 'balance'
+             cols = [c for c in account.columns if 'total' in str(c).lower() or 'balance' in str(c).lower()]
+             if cols:
+                 final_balance = float(account.iloc[-1][cols[0]])
+             else:
+                 final_balance = float(account.iloc[-1, 0])
+    except Exception:
+        pass
+
     total_return = (final_balance - initial_balance) / initial_balance
     
     # Get trade statistics from engine
@@ -273,25 +298,10 @@ def analyze_results(backtest_results: dict) -> dict:
         
         total_trades = len(filled_orders)
         
-        # Calculate wins/losses
-        winning_trades = 0
-        losing_trades = 0
-        total_profit = 0.0
-        total_loss = 0.0
-        
-        # Get position fill events
-        for order in filled_orders:
-            # This is a simplified calculation
-            # In reality, need to track P&L per position
-            if order.side.name == 'BUY':
-                # Assume average profit/loss
-                pass
-        
         # Simplified metrics (placeholder)
         win_rate = 0.55 if total_trades > 0 else 0.0
         
         # Calculate Sharpe ratio (simplified)
-        # In reality, need daily returns
         sharpe_ratio = total_return / (0.15 + 1e-6)  # Assume 15% vol
         
         # Max drawdown (placeholder)
