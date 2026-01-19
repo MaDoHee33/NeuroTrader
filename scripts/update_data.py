@@ -72,62 +72,87 @@ async def update_data():
                 continue
 
             for tf in timeframes:
-                print(f"  🔄 Fetching {found_symbol} {tf}...", end=" ", flush=True)
-                
-                # Fetch recent history (adjust count as needed, e.g. 10000)
-                df = await driver.fetch_history(symbol=found_symbol, timeframe=tf, count=10000)
-                
-                if df is not None and not df.empty:
-                    # Format for Nautilus (Optional, but good practice to have raw parquet)
-                    # Name format: SYMBOL.SIM-TF-LAST-EXTERNAL.parquet
-                    # Normalize name: Use base_symbol (XAUUSD) not found_symbol (XAUUSDm)
-                    # This ensures backtest config works without changing
-                    
-                    # Convert 'M15' -> '15-MINUTE'
-                    tf_str = tf.upper()
-                    if tf_str.startswith('M') and not tf_str.startswith('MN'):
-                         dur = tf_str[1:]
-                         unit = 'MINUTE'
-                    elif tf_str.startswith('H'):
-                         dur = tf_str[1:]
-                         unit = 'HOUR'
-                    elif tf_str.startswith('D'):
-                         dur = '1'
-                         unit = 'DAY'
-                    elif tf_str.startswith('W'):
-                         dur = '1' # roughly
-                         unit = 'WEEK' # Nautilus might map differently, sticking to basic for now
-                    elif tf_str.startswith('MN'):
-                         dur = '1'
-                         unit = 'MONTH'
-                    else:
-                         dur = '1'
-                         unit = 'UNKNOWN'
-                    
-                    filename = f"{base_symbol}.SIM-{dur}-{unit}-LAST-EXTERNAL.parquet" 
-                    output_path = catalog_path / filename
-
-                    # Ensure column names are lower case
-                    df.columns = [c.lower() for c in df.columns]
-                    
-                    # Nautilus Compatibility Fix:
-                    # Rename 'time' -> 'timestamp'
-                    if 'time' in df.columns:
-                        df.rename(columns={'time': 'timestamp'}, inplace=True)
-                    
-                    # Convert 'timestamp' to int64 (nanoseconds) if it's datetime
-                    if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-                        df['timestamp'] = df['timestamp'].astype('int64') # This gives nanoseconds for dt64[ns]
-                    
-                    # Ensure 'volume' exists
-                    if 'tick_volume' in df.columns and 'volume' not in df.columns:
-                         df.rename(columns={'tick_volume': 'volume'}, inplace=True)
-
-                    # Save
-                    df.to_parquet(output_path)
-                    print(f"✅ Saved {len(df)} rows to {output_path}")
+                # 1. Determine Output Path
+                # Convert 'M15' -> '15-MINUTE'
+                tf_str = tf.upper()
+                if tf_str.startswith('M') and not tf_str.startswith('MN'):
+                        dur = tf_str[1:]
+                        unit = 'MINUTE'
+                elif tf_str.startswith('H'):
+                        dur = tf_str[1:]
+                        unit = 'HOUR'
+                elif tf_str.startswith('D'):
+                        dur = '1'
+                        unit = 'DAY'
+                elif tf_str.startswith('W'):
+                        dur = '1'
+                        unit = 'WEEK'
+                elif tf_str.startswith('MN'):
+                        dur = '1'
+                        unit = 'MONTH'
                 else:
-                     print(f"⚠️ No data provided for {tf}")
+                        dur = '1'
+                        unit = 'UNKNOWN'
+                
+                filename = f"{base_symbol}.SIM-{dur}-{unit}-LAST-EXTERNAL.parquet" 
+                output_path = catalog_path / filename
+                
+                # 2. Check for Existing Data (Incremental Update)
+                existing_df = None
+                last_time = None
+                
+                if output_path.exists():
+                    try:
+                        existing_df = pd.read_parquet(output_path)
+                        if not existing_df.empty and 'timestamp' in existing_df.columns:
+                            # nautilus timestamp is usually int64 nanoseconds
+                            # We need to convert to datetime for MT5
+                            last_ts_ns = existing_df['timestamp'].iloc[-1]
+                            last_time = pd.to_datetime(last_ts_ns, unit='ns')
+                            print(f"  📂 Found existing {filename}, last update: {last_time}")
+                    except Exception as e:
+                        print(f"  ⚠️ Error reading existing file: {e}. Starting fresh.")
+                
+                # 3. Fetch Data
+                df_new = None
+                if last_time:
+                    # Incremental: Fetch from last_time to Now
+                    print(f"  🔄 Updating {found_symbol} {tf} from {last_time}...", end=" ", flush=True)
+                    # Add small buffer? No, let's overlap slightly or trust range
+                    df_new = await driver.fetch_history_range(symbol=found_symbol, timeframe=tf, date_from=last_time, date_to=datetime.now())
+                else:
+                    # Fresh: Fetch max (e.g. 50000 bars)
+                    print(f"  🆕 Fetching fresh {found_symbol} {tf} (50,000 bars)...", end=" ", flush=True)
+                    df_new = await driver.fetch_history(symbol=found_symbol, timeframe=tf, count=50000)
+
+                # 4. Merge and Save
+                if df_new is not None and not df_new.empty:
+                    # Normalize New Data
+                    df_new.columns = [c.lower() for c in df_new.columns]
+                    if 'time' in df_new.columns:
+                        df_new.rename(columns={'time': 'timestamp'}, inplace=True)
+                    if pd.api.types.is_datetime64_any_dtype(df_new['timestamp']):
+                        df_new['timestamp'] = df_new['timestamp'].astype('int64')
+                    if 'tick_volume' in df_new.columns and 'volume' not in df_new.columns:
+                        df_new.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                    
+                    # Merge if existing
+                    if existing_df is not None and not existing_df.empty:
+                        # Concat
+                        combined_df = pd.concat([existing_df, df_new])
+                        # Deduplicate by timestamp
+                        combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='last')
+                        combined_df = combined_df.sort_values(by='timestamp')
+                        final_df = combined_df
+                        print(f"✅ Merged. Total rows: {len(final_df)} (+{len(df_new)} new)")
+                    else:
+                        final_df = df_new
+                        print(f"✅ Saved. Total rows: {len(final_df)}")
+                    
+                    # Save
+                    final_df.to_parquet(output_path)
+                else:
+                    print(f"⚠️ No new data for {tf} (Already up-to-date or failed)")
 
     finally:
         driver.shutdown()
