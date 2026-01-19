@@ -1,10 +1,10 @@
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pandas as pd
 from typing import Optional
 from collections import deque
+from src.brain.risk_manager import RiskManager
 
 class TradingEnv(gym.Env):
     """
@@ -20,6 +20,13 @@ class TradingEnv(gym.Env):
         self.initial_balance = initial_balance
         self.render_mode = render_mode
         self.max_steps = max_steps if max_steps else len(df) - 1
+        
+        # Initialize Risk Manager
+        self.risk_manager = RiskManager({
+            'max_lots': 1.0,           # Max 1.0 Lot per trade
+            'daily_loss_pct': 0.05,    # 5% Daily Loss Stop
+            'max_drawdown_pct': 0.20   # 20% Max Drawdown Circuit Breaker
+        })
         
         # Sharpe ratio tracking (research-based)
         self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
@@ -98,40 +105,74 @@ class TradingEnv(gym.Env):
         return np.array(obs, dtype=np.float32)
 
     def step(self, action):
+        # 0. Risk Check: Circuit Breaker
+        current_status = self.risk_manager.get_status()
+        if current_status['circuit_breaker']:
+            # Halt trading immediately
+            return self._get_observation(), -1.0, True, False, {'error': 'Circuit Breaker Active'}
+
         current_price = self.df.iloc[self.current_step]['close']
         
+        # Get Current Time for Risk Manager
+        # Try index first, then 'date'/'time' column
+        current_time = self.df.index[self.current_step]
+        if not isinstance(current_time, (pd.Timestamp, datetime, np.datetime64)):
+             if 'time' in self.df.columns:
+                 current_time = self.df.iloc[self.current_step]['time']
+             elif 'date' in self.df.columns:
+                 current_time = self.df.iloc[self.current_step]['date']
+        
         # Position limits (prevent unlimited positions)
-        MAX_POSITION_VALUE = self.initial_balance * 2.0  # Max 2x initial balance in position
+        MAX_POSITION_VALUE = self.initial_balance * 2.0  # Max 2x initial balance
         current_position_value = abs(self.position * current_price)
         
         reward = 0
         prev_equity = self.equity
         trade_info = None
+        risk_penalty = 0
         
         if action == 1:  # BUY
             # Can only buy if we have balance AND not over position limit
             if self.balance > 0 and current_position_value < MAX_POSITION_VALUE:
                 # Use 99% of balance (keep 1% buffer)
                 cost = self.balance * 0.99
-                fee = cost * 0.001  # 0.1% transaction fee
-                invest_amount = cost - fee
+                invest_amount = cost * (1 - 0.001) # Deduct fee approx
                 
                 if invest_amount > 0:
                     units = invest_amount / current_price
-                    self.position += units
-                    self.balance -= cost
-                    trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
                     
+                    # RISK MANAGER CHECK
+                    if self.risk_manager.check_order("PAIR", units, "BUY"):
+                        # Allowed
+                        self.position += units
+                        self.balance -= cost
+                        trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
+                    else:
+                        # Blocked
+                        risk_penalty = -0.1 # Small penalty for attempting forbidden trade
+                        
         elif action == 2:  # SELL
             # Can only sell if we have position
             if self.position > 0:
-                # Sell all position
+                units_to_sell = self.position
+                
+                # RISK MANAGER CHECK (Usually reducing risk is always allowed, but Max Lots might apply if we treat it as an order)
+                # For closing positions, we usually ALLOW it. 
+                # But if 'SELL' means 'Short Selling' (opening new position), we check.
+                # In this env, action 2 is "Close/Sell All" or "Short"? 
+                # Judging by logic: self.position = 0, it means CLOSE ALL.
+                # Reducing exposure should generally be allowed.
+                # So we bypass check_order for CLOSING positions, or pass is_close=True if our manager supported it.
+                # For now, we assume reducing position is always safe.
+                
                 revenue = self.position * current_price
                 fee = revenue * 0.001  # 0.1% transaction fee
                 self.balance += (revenue - fee)
-                sold_units = self.position
                 self.position = 0
-                trade_info = {'action': 'SELL', 'price': current_price, 'units': sold_units}
+                trade_info = {'action': 'SELL', 'price': current_price, 'units': units_to_sell}
+        
+        # Update metrics AFTER action (to see new equity)
+        # But we need equity first. So we calculate equity next block.
         
         # Update Step
         self.current_step += 1
@@ -142,6 +183,9 @@ class TradingEnv(gym.Env):
             self.equity = self.balance + (self.position * next_price)
         else:
             self.equity = self.balance + (self.position * current_price)
+        
+        # Update Risk Manager Metrics
+        self.risk_manager.update_metrics(self.equity, current_time)
         
         # ===== RESEARCH-BASED REWARD FUNCTION =====
         # Reference: Multiple research papers on PPO for trading
@@ -170,7 +214,7 @@ class TradingEnv(gym.Env):
         if trade_info is not None:
              # Penalize each trade slightly to prevent churning
              transaction_penalty = -0.0005 
-
+ 
         # 4. Holding Reward (Encourage riding trends)
         holding_reward = 0
         if self.position > 0 and log_return > 0:
@@ -191,7 +235,8 @@ class TradingEnv(gym.Env):
             0.3 * sharpe_contribution +  # Risk-adjusted performance
             0.1 * transaction_penalty +  # Discourage over-trading
             0.1 * drawdown_penalty +     # Risk management
-            0.1 * holding_reward         # Trend following
+            0.1 * holding_reward +       # Trend following
+            1.0 * risk_penalty           # Hard Risk violation penalty
         )
         
         # 6. Portfolio balance bonus (encourage diversification)
