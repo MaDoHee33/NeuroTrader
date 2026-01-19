@@ -32,8 +32,9 @@ class TradingEnv(gym.Env):
         # We assume these columns exist in the dataframe        # Features expected in DF
         self.feature_cols = [
             'close', 'rsi', 'macd', 'macd_signal', 
-            'bb_high', 'bb_low', 'ema_20', 'ema_50',
-            'atr', 'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
+            'bb_high', 'bb_low', 'bb_width', 'ema_20', 'ema_50',
+            'atr', 'stoch_k', 'stoch_d', 'vwap',
+            'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
         ]
         
         # Level 3: Add News Impact if available
@@ -164,13 +165,18 @@ class TradingEnv(gym.Env):
         else:
             sharpe_contribution = 0
         
-        # 3. Transaction cost penalty (if trade occurred)
+        # 3. Transaction cost penalty (Spam filter)
         transaction_penalty = 0
         if trade_info is not None:
-            # Already deducted from balance, but signal it in reward
-            transaction_penalty = -0.01  # Small penalty to discourage over-trading
-        
-        # 4. Drawdown penalty (research-based risk management)
+             # Penalize each trade slightly to prevent churning
+             transaction_penalty = -0.0005 
+
+        # 4. Holding Reward (Encourage riding trends)
+        holding_reward = 0
+        if self.position > 0 and log_return > 0:
+            holding_reward = 0.0002 # Bonus for holding while profitable
+            
+        # 5. Drawdown penalty (research-based risk management)
         current_drawdown = (self.equity - self.initial_balance) / self.initial_balance
         drawdown_penalty = 0
         if current_drawdown < -0.1:  # More than 10% loss
@@ -178,13 +184,14 @@ class TradingEnv(gym.Env):
         elif current_drawdown < -0.05:  # More than 5% loss
             drawdown_penalty = -0.02  # Moderate penalty
         
-        # 5. Composite reward (weighted combination)
+        # 6. Composite reward (weighted combination)
         # Weights based on research best practices
         reward = (
             0.5 * log_return +           # Base profit/loss
             0.3 * sharpe_contribution +  # Risk-adjusted performance
             0.1 * transaction_penalty +  # Discourage over-trading
-            0.1 * drawdown_penalty       # Risk management
+            0.1 * drawdown_penalty +     # Risk management
+            0.1 * holding_reward         # Trend following
         )
         
         # 6. Portfolio balance bonus (encourage diversification)
