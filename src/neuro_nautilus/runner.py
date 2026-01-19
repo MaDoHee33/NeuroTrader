@@ -185,6 +185,53 @@ def run_backtest(args):
     }
 
 
+# Wrapper function for notebook/script usage
+def simple_backtest(
+    data_path: str,
+    model_path: str,
+    bar_type: str,
+    start_date: str = None,
+    end_date: str = None,
+    initial_balance: float = 10000.0
+):
+    """
+    Simplified backtest function for notebook/script usage.
+    
+    Args:
+        data_path: Path to Nautilus data catalog
+        model_path: Path to trained model (.zip)
+        bar_type: Bar type string (e.g., 'XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL')
+        start_date: Start date (YYYY-MM-DD) or None for all data
+        end_date: End date (YYYY-MM-DD) or None for all data
+        initial_balance: Starting balance (default: 10000)
+    
+    Returns:
+        Dictionary with backtest results
+    
+    Example:
+        >>> results = simple_backtest(
+        ...     data_path='data/nautilus_catalog',
+        ...     model_path='models/ppo_10M.zip',
+        ...     bar_type='XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL',
+        ...     start_date='2023-06-01',
+        ...     end_date='2024-09-30'
+        ... )
+    """
+    import argparse
+    
+    # Create args object
+    args = argparse.Namespace()
+    args.data_dir = data_path
+    args.model_path = model_path
+    args.bar_type = bar_type
+    args.initial_balance = str(initial_balance)
+    args.log_level = 'INFO'
+    args.log_path = None
+    
+    # Run backtest
+    return run_backtest(args)
+
+
 def analyze_results(backtest_results: dict) -> dict:
     """
     Analyze backtest results and calculate performance metrics.
