@@ -52,9 +52,42 @@ def find_available_bar_types(
         for instrument in instruments:
             # Get bar types for this instrument
             try:
-                # List all bar types
-                bar_specs = catalog.bar_types(instrument_ids=[instrument.id])
+                # LISTING BAR TYPES
+                # Note: Some versions of Nautilus don't have catalog.bar_types() exposed cleanly
+                # We try the official way first, then fallback to common patterns
                 
+                bar_specs = []
+                if hasattr(catalog, 'bar_types'):
+                    try:
+                        bar_specs = catalog.bar_types(instrument_ids=[instrument.id])
+                    except:
+                        pass
+                
+                # FALLBACK: If API doesn't list them, we construct standard ones to check
+                if not bar_specs:
+                    # Common timeframes to check
+                    from nautilus_trader.model.data import BarType, BarSpecification
+                    from nautilus_trader.model.enums import BarAggregation, PriceType
+                    
+                    # Create a standard list of potential bar types
+                    # e.g. XAUUSD.SIM-15-MINUTE-LAST-EXTERNAL
+                    timeframes = [
+                        (15, BarAggregation.MINUTE),
+                        (5, BarAggregation.MINUTE),
+                        (1, BarAggregation.MINUTE),
+                        (1, BarAggregation.HOUR),
+                        (4, BarAggregation.HOUR),
+                        (1, BarAggregation.DAY)
+                    ]
+                    
+                    for count, agg in timeframes:
+                        try:
+                            spec = BarSpecification(count, agg, PriceType.LAST)
+                            bt = BarType(instrument.id, spec)
+                            bar_specs.append(bt)
+                        except:
+                            pass
+
                 for bar_type in bar_specs:
                     # Load bars to get count and date range
                     bars = list(catalog.bars(bar_types=[bar_type]))
