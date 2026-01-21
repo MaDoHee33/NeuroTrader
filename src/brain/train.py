@@ -8,6 +8,7 @@ import os
 import sys
 import argparse
 import pandas as pd
+import time
 from pathlib import Path
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
@@ -118,7 +119,7 @@ def load_data(data_path, bar_type_str):
     bar_type = BarType.from_str(bar_type_str)
     print(f"\n🎯 Requesting bar_type: {bar_type}")
     
-    bars = list(catalog.bars(bar_types=[bar_type]))
+    bars = list(catalog.bars(bar_types=[bar_type_str]))
     print(f"✅ Loaded {len(bars):,} bars")
     
     if not bars:
@@ -137,6 +138,8 @@ def load_data(data_path, bar_type_str):
         })
     
     df = pd.DataFrame(data).sort_values('timestamp').reset_index(drop=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df.set_index('timestamp', inplace=True)
     return df
 
 def train_model(args):

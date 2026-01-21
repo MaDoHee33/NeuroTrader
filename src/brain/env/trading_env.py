@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from typing import Optional
 from collections import deque
 from src.brain.risk_manager import RiskManager
@@ -223,10 +224,12 @@ class TradingEnv(gym.Env):
         # 5. Drawdown penalty (research-based risk management)
         current_drawdown = (self.equity - self.initial_balance) / self.initial_balance
         drawdown_penalty = 0
-        if current_drawdown < -0.1:  # More than 10% loss
-            drawdown_penalty = -0.05  # Significant penalty
-        elif current_drawdown < -0.05:  # More than 5% loss
-            drawdown_penalty = -0.02  # Moderate penalty
+        if current_drawdown < -0.15: # Critical Drawdown (-15%)
+            drawdown_penalty = -0.5  # Severe penalty
+        elif current_drawdown < -0.10: # High Drawdown (-10%)
+            drawdown_penalty = -0.2  # Heavy penalty
+        elif current_drawdown < -0.05: # Moderate Drawdown (-5%)
+            drawdown_penalty = -0.05  # Warning penalty
         
         # 6. Composite reward (weighted combination)
         # Weights based on research best practices

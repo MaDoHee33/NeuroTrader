@@ -126,13 +126,14 @@ class RLAgent:
             if len(df_features) > 0:
                 latest = df_features.iloc[-1]
                 
-                # CRITICAL: Must match training env observation space (15 features)
-                # Training env uses: 8 technical + 7 price features = 15 total
+                # CRITICAL: Must match training env observation space (19 features for V2)
+                # Training env uses: 8 technical + 7 price features + 4 new features = 19 total
                 feature_cols = [
                     'rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower',
                     'ema_20', 'atr', 'log_return',  # 8 technical
                     'close', 'open', 'high', 'low', 'volume',  # 5 price
-                    'normalized_close', 'normalized_volume'  # 2 normalized
+                    'normalized_close', 'normalized_volume',  # 2 normalized
+                    'stoch_k', 'stoch_d', 'vwap', 'bb_width' # 4 new features
                 ]
                 
                 # Build observation vector
@@ -151,11 +152,11 @@ class RLAgent:
                 
                 obs = np.array(obs_values, dtype=np.float32)
                 
-                # Ensure exactly 15 features
-                if len(obs) < 15:
-                    obs = np.pad(obs, (0, 15 - len(obs)), 'constant')
-                elif len(obs) > 15:
-                    obs = obs[:15]
+                # Ensure exactly 19 features
+                if len(obs) < 19:
+                    obs = np.pad(obs, (0, 19 - len(obs)), 'constant')
+                elif len(obs) > 19:
+                    obs = obs[:19]
                 
                 return self.decide_action(obs, portfolio_state)
             else:

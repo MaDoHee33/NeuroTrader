@@ -54,14 +54,22 @@ class MT5Driver:
              self.logger.error("MT5 Library not available. Cannot connect.")
              return False
 
-        self.logger.info("Initializing Real MT5 connection...")
-        if not mt5.initialize():
-             self.logger.error(f"MT5 Initialize failed, error code: {mt5.last_error()}")
-             # If real connection fails, fallback to Mock if configured, else fail
-             return False
+        self.logger.info(f"Initializing Real MT5 connection (Pkg: {mt5.__version__}, Author: {mt5.__author__})...")
         
+        # Attempt Init
+        if not mt5.initialize():
+             self.logger.error(f"❌ MT5 Initialize failed, error code: {mt5.last_error()}")
+             return False
+
+        # Verify Connection
+        terminal_info = mt5.terminal_info()
+        if terminal_info is None:
+             self.logger.error(f"❌ Connected to API but Terminal Info is None. Error: {mt5.last_error()}")
+             mt5.shutdown()
+             return False
+             
+        self.logger.info(f"✅ Connected to MT5 Terminal: {terminal_info.name} (Trade Allowed: {terminal_info.trade_allowed})")
         self.connected = True
-        self.logger.info("MT5 Connected Successfully.")
         return True
 
     async def fetch_history(self, symbol="EURUSD", timeframe="D1", count=1000):
@@ -180,6 +188,43 @@ class MT5Driver:
         # if tick:
         #     return tick._asdict()
         return None 
+
+    async def get_account_info(self):
+        """Fetches current account balance and equity."""
+        if self.is_mock:
+            # Mock Data
+            return {
+                'login': 123456,
+                'balance': 10000.0,
+                'equity': 10000.0,
+                'profit': 0.0,
+                'currency': 'USD'
+            }
+        
+        if not self.connected:
+            return None
+            
+        info = mt5.account_info()
+        if info:
+             return info._asdict()
+        return None
+
+    async def get_positions(self, symbol=None):
+        """Fetches current open positions."""
+        if self.is_mock:
+            return [] # No positions in mock for now
+            
+        if not self.connected:
+            return []
+            
+        if symbol:
+            positions = mt5.positions_get(symbol=symbol)
+        else:
+            positions = mt5.positions_get()
+            
+        if positions:
+            return [p._asdict() for p in positions]
+        return []
 
     async def execute_trade(self, decision):
         """Executes an order based on decision dict."""

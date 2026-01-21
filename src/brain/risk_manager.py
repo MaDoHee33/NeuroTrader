@@ -55,7 +55,11 @@ class RiskManager:
             self.peak_balance = balance
 
         # 1. Check Circuit Breaker (Total Drawdown)
-        drawdown_pct = (self.peak_balance - balance) / self.peak_balance
+        if self.peak_balance > 0:
+            drawdown_pct = (self.peak_balance - balance) / self.peak_balance
+        else:
+            drawdown_pct = 0.0
+            
         if drawdown_pct >= self.max_drawdown_limit_pct:
             if not self.is_circuit_breaker_active:
                 self.logger.critical(f"🚨 CIRCUIT BREAKER TRIGGERED! Drawdown: {drawdown_pct:.2%}")
