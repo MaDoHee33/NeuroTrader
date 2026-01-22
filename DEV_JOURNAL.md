@@ -127,3 +127,23 @@
 
 
 
+
+---
+
+### 7. Multi-Agent & News Filter Upgrade
+**Objective**: Develop 'NeuroTrader Multi-Agent System' and integrate News Filter.
+
+**Plan**:
+1.  **News Filter**: Block trades during High Impact economic events (Risk Management).
+2.  **Short-Term Agent (Speed)**: Develop 1D-CNN + LSTM specialist for short-term scalping.
+3.  **Ensemble Manager**: Combine signals from Long-term (Trend) and Short-term (Speed) agents.
+
+**Actions**:
+- **Created src/data/economic_calendar.py**: Module to check High Impact news window.
+- **Updated RiskManager**: Added check_order(current_time) to block trades 30 mins around High Impact news.
+- **Updated TradingEnv**: Passed simulation time to Risk Manager to enforce news filtering during training/backtest.
+- **Planned**: Drafted architecture for NeuroTrader-Speed (1D-CNN).
+
+**Next Steps**:
+- Implement NeuroTrader-Speed model.
+- Build Ensemble logic.

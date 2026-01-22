@@ -1,6 +1,7 @@
 
 import logging
 from datetime import datetime, date
+from src.data.economic_calendar import EconomicCalendar
 
 class RiskManager:
     """
@@ -19,6 +20,10 @@ class RiskManager:
         
         # Default: 20% Max Drawdown (Circuit Breaker)
         self.max_drawdown_limit_pct = self.config.get('max_drawdown_pct', 0.20)
+        
+        # 3. News / Sentiment
+        self.calendar = EconomicCalendar(self.config.get('calendar_csv_path'))
+        self.news_window_minutes = self.config.get('news_window_minutes', 30)
 
         # 2. State Tracking
         self.current_date = date.today()
@@ -74,7 +79,7 @@ class RiskManager:
                 self.logger.warning(f"🛑 DAILY LOSS LIMIT REACHED! Loss: {daily_loss_pct:.2%}")
                 self.daily_stop_triggered = True
 
-    def check_order(self, symbol, volume, order_type):
+    def check_order(self, symbol, volume, order_type, current_time=None):
         """
         Validates an order against risk rules.
         Returns: True (Allowed), False (Blocked)
@@ -93,6 +98,13 @@ class RiskManager:
         if volume > self.max_lots_per_trade:
             self.logger.warning(f"Order Blocked: Volume {volume} exceeds limit {self.max_lots_per_trade}")
             return False
+            
+        # Rule 3: News Filter (High Impact)
+        if current_time:
+             is_news, event_name = self.calendar.is_high_impact_window(current_time, self.news_window_minutes)
+             if is_news:
+                 self.logger.warning(f"Order Blocked: High Impact News Event Nearby ({event_name})")
+                 return False
 
         return True
 

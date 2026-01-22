@@ -149,7 +149,7 @@ class TradingEnv(gym.Env):
                     units = invest_amount / current_price
                     
                     # RISK MANAGER CHECK
-                    if self.risk_manager.check_order("PAIR", units, "BUY"):
+                    if self.risk_manager.check_order("PAIR", units, "BUY", current_time):
                         # Allowed
                         self.position += units
                         self.balance -= cost
