@@ -106,8 +106,14 @@ class MT5Driver:
         # Map string timeframe to MT5 constant (Simplified mapping)
         tf_map = {
             "M1": mt5.TIMEFRAME_M1,
+            "M5": mt5.TIMEFRAME_M5,
+            "M15": mt5.TIMEFRAME_M15,
+            "M30": mt5.TIMEFRAME_M30,
             "H1": mt5.TIMEFRAME_H1,
-            "D1": mt5.TIMEFRAME_D1
+            "H4": mt5.TIMEFRAME_H4,
+            "D1": mt5.TIMEFRAME_D1,
+            "W1": mt5.TIMEFRAME_W1,
+            "MN1": mt5.TIMEFRAME_MN1
         }
         mt5_tf = tf_map.get(timeframe, mt5.TIMEFRAME_D1)
         
@@ -226,35 +232,102 @@ class MT5Driver:
             return [p._asdict() for p in positions]
         return []
 
+    def _send_order(self, symbol, order_type, volume, price=None, sl=None, tp=None, deviation=20):
+        """Helper to send raw orders to MT5."""
+        if not self.connected:
+            return None
+            
+        ticker = mt5.symbol_info(symbol)
+        if not ticker:
+            self.logger.error(f"{symbol} not found")
+            return None
+            
+        if not ticker.visible:
+            if not mt5.symbol_select(symbol, True):
+                self.logger.error(f"Cannot select {symbol}")
+                return None
+                
+        # Fill Request
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(volume),
+            "type": order_type,
+            "deviation": deviation,
+            "magic": 234000,
+            "comment": "NeuroTrader AI",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
+        }
+        
+        # Price handling
+        if price:
+            request["price"] = price
+        else:
+            # Market Order
+            if order_type == mt5.ORDER_TYPE_BUY:
+                request["price"] = ticker.ask
+            elif order_type == mt5.ORDER_TYPE_SELL:
+                request["price"] = ticker.bid
+                
+        # SL/TP
+        if sl: request["sl"] = sl
+        if tp: request["tp"] = tp
+        
+        # Send
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            self.logger.error(f"Order Failed: {result.retcode} ({result.comment})")
+            return None
+            
+        self.logger.info(f"✅ Order Executed: {result.order}")
+        return result
+
     async def execute_trade(self, decision):
         """Executes an order based on decision dict."""
-        action = decision.get('action')
-        price = decision.get('price', 0.0) # Assume price comes from decision or current market
+        action = decision.get('action') # "BUY", "SELL" (Close), "HOLD"
+        symbol = decision.get('symbol', 'XAUUSDm')
         volume = decision.get('volume', 0.01)
-        symbol = decision.get('symbol', 'EURUSD')
-
+        
         if action == "HOLD":
             return
             
-        self.logger.info(f"Executing Trade: {decision}")
+        self.logger.info(f"Executing Trade: {decision} on {symbol}")
         
         # 1. Shadow Mode Check
         is_shadow = self.shadow_mode or self.is_mock
         
         if is_shadow:
-             self.logger.info(f"👻 [SHADOW] Trade Executed: {action} {symbol} @ {price}")
-             # Record to DB
-             if self.storage:
-                 self.storage.log_trade(symbol, action, price, volume, is_shadow=True, comment="Shadow Trade")
+             self.logger.info(f"👻 [SHADOW] Trade Executed: {action} {symbol} {volume} Lots")
              return True
 
-        # 2. Real Execution Logic (Stub)
-        # request = { ... }
-        # result = mt5.order_send(request)
-        # if result.retcode == mt5.TRADE_RETCODE_DONE:
-        #      if self.storage:
-        #          self.storage.log_trade(...)
-        
+        # 2. Real Execution
+        if action == "BUY":
+            # Market Buy
+            res = self._send_order(symbol, mt5.ORDER_TYPE_BUY, volume)
+            return res is not None
+            
+        elif action == "SELL":
+            # Close All Positions for this Symbol
+            positions = mt5.positions_get(symbol=symbol)
+            if positions:
+                for pos in positions:
+                    # Close Long = Sell, Close Short = Buy
+                    # Assuming Long Only strategy for now (since action 1=Buy)
+                    # To close a Long, we Sell.
+                    type_close = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                    
+                    self._send_order(
+                        symbol, 
+                        type_close, 
+                        pos.volume, 
+                        price=None, # Market
+                        deviation=20
+                    )
+                return True
+            else:
+                self.logger.warning("Signal SELL but no positions found.")
+                
         return False
 
     def shutdown(self):

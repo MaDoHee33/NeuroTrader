@@ -14,13 +14,22 @@ class TradingEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df: pd.DataFrame, initial_balance=10000, max_steps=None, render_mode=None):
+    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None):
         super(TradingEnv, self).__init__()
         
-        self.df = df
+        # Determine if single DF or Dict
+        if isinstance(df_dict, pd.DataFrame):
+            self.assets = {'DEFAULT': df_dict}
+        else:
+            self.assets = df_dict
+            
+        self.asset_names = list(self.assets.keys())
+        self.current_asset_name = self.asset_names[0]
+        self.df = self.assets[self.current_asset_name]
+        
         self.initial_balance = initial_balance
         self.render_mode = render_mode
-        self.max_steps = max_steps if max_steps else len(df) - 1
+        self.max_steps = max_steps # dynamic per episode usually
         
         # Initialize Risk Manager
         self.risk_manager = RiskManager({
@@ -29,28 +38,24 @@ class TradingEnv(gym.Env):
             'max_drawdown_pct': 0.20   # 20% Max Drawdown Circuit Breaker
         })
         
-        # Sharpe ratio tracking (research-based)
+        # Sharpe ratio tracking
         self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
         
         # Action Space: 0=HOLD, 1=BUY, 2=SELL
         self.action_space = spaces.Discrete(3)
         
-        # Observation Space: 
-        # [Close Price, RSI, MACD, MACD_Signal, BB_High, BB_Low, EMA_20, EMA_50, Balance, Position]
-        # We assume these columns exist in the dataframe        # Features expected in DF
+        # Updated Hybrid Features
         self.feature_cols = [
-            'close', 'rsi', 'macd', 'macd_signal', 
-            'bb_high', 'bb_low', 'bb_width', 'ema_20', 'ema_50',
-            'atr', 'stoch_k', 'stoch_d', 'vwap',
-            'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
+            'body_size', 'upper_wick', 'lower_wick', 'is_bullish',
+            'ema_50', 'dist_ema_50', 'dist_ema_200',
+            'rsi', 'atr_norm',
+            'dist_to_high', 'dist_to_low',
+            'log_ret', 'log_ret_lag_1', 'log_ret_lag_2',
+            'hour_sin', 'hour_cos', 'day_sin', 'day_cos'
         ]
         
-        # Level 3: Add News Impact if available
-        if 'news_impact_score' in df.columns:
-            self.feature_cols.append('news_impact_score')
-        
-        # Check if cols exist
-        missing_cols = [c for c in self.feature_cols if c not in df.columns]
+        # Check cols on first asset
+        missing_cols = [c for c in self.feature_cols if c not in self.df.columns]
         if missing_cols:
             raise ValueError(f"Dataframe missing required columns: {missing_cols}")
 
@@ -69,29 +74,30 @@ class TradingEnv(gym.Env):
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
         
-        self.current_step = 0
+        # Randomly select asset
+        import random
+        self.current_asset_name = random.choice(self.asset_names)
+        self.df = self.assets[self.current_asset_name]
         
-        # CRITICAL FIX: Start with BALANCED portfolio (50/50)
-        # This gives BUY and SELL equal opportunity from the start
+        # Reset constraints
+        self.max_steps_episode = len(self.df) - 1
+        
+        self.current_step = 0
         initial_price = self.df.iloc[0]['close']
         
-        # Split initial balance 50/50 between cash and position
+        # Start Balanced
         self.balance = self.initial_balance * 0.5  # 50% cash
         position_value = self.initial_balance * 0.5  # 50% in asset  
         self.position = position_value / initial_price  # Convert to units
         
-        # Start equity = balance + position value
         self.equity = self.initial_balance
         self.trades_history = []
-        
-        # Reset Sharpe tracking
         self.returns_history.clear()
         
-        # Log initial state
-        print(f"🔄 Reset: Balance=${self.balance:.2f}, Position={self.position:.4f} units @ ${initial_price:.2f}")
+        print(f"🔄 Reset [{self.current_asset_name}]: Balance=${self.balance:.2f}")
         
         return self._get_observation(), {}
-
+    
     def _get_observation(self):
         # Get current row
         row = self.df.iloc[self.current_step]

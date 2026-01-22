@@ -16,73 +16,100 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     if 'close' not in df.columns:
         raise ValueError("DataFrame must contain 'close' column")
 
-    # 1. RSI (14)
-    rsi = RSIIndicator(close=df['close'], window=14)
-    df['rsi'] = rsi.rsi()
-
-    # 2. MACD (12, 26, 9)
-    macd = MACD(close=df['close'], window_slow=26, window_fast=12, window_sign=9)
-    df['macd'] = macd.macd()
-    df['macd_signal'] = macd.macd_signal()
-
-    # 3. Bollinger Bands (20, 2)
-    bb = BollingerBands(close=df['close'], window=20, window_dev=2)
-    df['bb_high'] = bb.bollinger_hband()
-    df['bb_low'] = bb.bollinger_lband()
-    df['bb_width'] = (df['bb_high'] - df['bb_low']) / df['close'] # Normalized width
-
-    # 4. EMA (20, 50)
-    ema20 = EMAIndicator(close=df['close'], window=20)
-    df['ema_20'] = ema20.ema_indicator()
+    # --- 1. Price Action Fundamentals (The Core) ---
     
+    # Candle Geometry
+    # Body Size: Absolute value of Open - Close
+    df['body_size'] = (df['close'] - df['open']).abs()
+    # Upper Wick: High - Max(Open, Close)
+    df['upper_wick'] = df['high'] - df[['open', 'close']].max(axis=1)
+    # Lower Wick: Min(Open, Close) - Low
+    df['lower_wick'] = df[['open', 'close']].min(axis=1) - df['low']
+    # Bullish Flag: 1 if Green, -1 if Red
+    df['is_bullish'] = np.where(df['close'] >= df['open'], 1.0, -1.0)
+    
+    # --- 2. Trend (Context) ---
+    # EMA 50 & 200 (Standard Trend Filters)
     ema50 = EMAIndicator(close=df['close'], window=50)
     df['ema_50'] = ema50.ema_indicator()
+    
+    ema200 = EMAIndicator(close=df['close'], window=200)
+    df['ema_200'] = ema200.ema_indicator()
+    
+    # Distance from EMAs (Normalized by Close)
+    df['dist_ema_50'] = (df['close'] - df['ema_50']) / df['close']
+    df['dist_ema_200'] = (df['close'] - df['ema_200']) / df['close']
 
-    # 5. ATR (14) - Volatility
+    # --- 3. Momentum (Timing) ---
+    # RSI (14) - Unchanged
+    rsi = RSIIndicator(close=df['close'], window=14)
+    df['rsi'] = rsi.rsi() / 100.0 # Normalize to 0-1 range
+
+    # --- 4. Volatility (Risk Management) ---
+    # ATR (14)
     if 'high' in df.columns and 'low' in df.columns:
         atr = AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14)
         df['atr'] = atr.average_true_range()
+        # Normalized ATR (Volatility relative to price)
+        df['atr_norm'] = df['atr'] / df['close']
     else:
-        df['atr'] = 0.0 # Placeholder if high/low missing
-        
-    # 6. Stochastic Oscillator (14, 3, 3) - Momentum
-    if 'high' in df.columns and 'low' in df.columns:
-        stoch = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
-        df['stoch_k'] = stoch.stoch()
-        df['stoch_d'] = stoch.stoch_signal()
-    else:
-        df['stoch_k'] = 50.0
-        df['stoch_d'] = 50.0
+        df['atr'] = 0.0
+        df['atr_norm'] = 0.0
 
-    # 7. VWAP (Volume Weighted Average Price) - Intraday Trend
-    if 'volume' in df.columns and 'high' in df.columns and 'low' in df.columns:
-        # Note: accurate VWAP resets daily, but rolling VWAP is useful for short-term trend
-        # ta library VolumeWeightedAveragePrice is rolling window or cumulative?
-        # Usually checking docs: it's cumulative. For rolling, we might need custom.
-        # But for RL, even a rolling approximation is fine.
-        vwap = VolumeWeightedAveragePrice(high=df['high'], low=df['low'], close=df['close'], volume=df['volume'], window=14)
-        df['vwap'] = vwap.volume_weighted_average_price()
-    else:
-        df['vwap'] = df['close'] # Fallback
+    # --- 5. Market Structure (Local Extrema) ---
+    # Convert series to numpy for rolling
+    high_prices = df['high']
+    low_prices = df['low']
+    
+    # Rolling Max/Min (Window 14) to find recent Highs/Lows
+    df['rolling_high'] = high_prices.rolling(window=14).max()
+    df['rolling_low'] = low_prices.rolling(window=14).min()
+    
+    # Distance to Support/Resistance (Normalized)
+    df['dist_to_high'] = (df['rolling_high'] - df['close']) / df['close']
+    df['dist_to_low'] = (df['close'] - df['rolling_low']) / df['close']
 
-    # 8. Log Returns & Lags (Market State)
-    # r_t = ln(P_t / P_{t-1})
+    # --- 6. Market State Features ---
     df['log_ret'] = np.log(df['close'] / df['close'].shift(1))
+    df['log_ret'] = df['log_ret'].fillna(0) # Fill after calculation, before lags
+    df['log_ret_lag_1'] = df['log_ret'].shift(1)
+    df['log_ret_lag_2'] = df['log_ret'].shift(2)
     
-    # Fill initial NaNs from shift with 0
-    df['log_ret'] = df['log_ret'].fillna(0)
+    # --- 7. Time Features (NeuroTrader 2.0) ---
+    # Ensure time column is datetime
+    if 'time' in df.columns and not np.issubdtype(df['time'].dtype, np.datetime64):
+        df['time'] = pd.to_datetime(df['time'])
     
-    # Lags
-    for lag in [1, 2, 3, 5]:
-        df[f'log_ret_lag_{lag}'] = df['log_ret'].shift(lag)
+    if 'time' in df.columns:
+        df['hour'] = df['time'].dt.hour
+        df['day_of_week'] = df['time'].dt.dayofweek
+        
+        # Normalize features for Neural Net
+        # Hour: 0-23 -> 0-1
+        df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+        df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+        
+        # Day: 0-6 -> 0-1
+        df['day_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+        df['day_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
+    else:
+        # If 'time' column is not present, fill time features with NaNs or zeros
+        df['hour'] = np.nan
+        df['day_of_week'] = np.nan
+        df['hour_sin'] = np.nan
+        df['hour_cos'] = np.nan
+        df['day_sin'] = np.nan
+        df['day_cos'] = np.nan
 
-    # 9. Cleanup
-    # Indicators introduce NaNs at the beginning. 
-    # Backfill to preserve data length (though RL env handles skipping first N steps usually)
-    df = df.bfill().fillna(0)
-    
-    return df 
-    # Dropping is safest for training logic to avoid noisy 0s.
+    # 8. Clean up
+    # Normalize features if needed? 
+    # For PPO, inputs like Price should be normalized or relative.
+    # We used 'dist_' and 'norm' features which is good.
+    # Raw 'close' is tricky for neural nets across long timeframes? 
+    # Usually we rely on return-based or relative inputs.
+    # But Env observes 'close' for execution. 
+    # We keep 'close' for the Env, but maybe model should focus on derived features.
+
     df = df.dropna()
     
     return df
