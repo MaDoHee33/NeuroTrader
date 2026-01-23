@@ -3,7 +3,8 @@ import asyncio
 import numpy as np
 import pandas as pd
 from collections import deque
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, A2C
+from stable_baselines3.common.base_class import BaseAlgorithm
 import os
 from pathlib import Path
 import glob
@@ -20,7 +21,11 @@ class RLAgent:
         self.history_size = 100 
         self.history = deque(maxlen=self.history_size)
         
-        self._load_model()
+        # Ensemble Support
+        self.ensemble = {}
+        self.active_model_name = "ppo" # Default
+        self._load_ensemble_models()
+        self._load_model() # Legacy load for back compat or fallback
     
     def _find_available_models(self, search_dir):
         """Find all available model files in directory"""
@@ -34,9 +39,38 @@ class RLAgent:
         models.sort(key=lambda x: x.stat().st_mtime, reverse=True)
         return models
     
+    def _load_ensemble_models(self):
+        """Attempts to load PPO, A2C, and other models for ensemble."""
+        print("🔍 RLAgent: Initializing Ensemble...")
+        
+        # Hypothetical paths - in real deploy they would be distinct files
+        # For now, we look for 'ppo_neurotrader.zip', 'a2c_neurotrader.zip'
+        from stable_baselines3 import A2C, PPO, DDPG
+        
+        model_types = {
+            'ppo': (PPO, "ppo_neurotrader.zip"),
+            'a2c': (A2C, "a2c_neurotrader.zip"),
+            # 'ddpg': (DDPG, "ddpg_neurotrader.zip") 
+        }
+        
+        for name, (cls, filename) in model_types.items():
+            path = Path("models/checkpoints") / filename
+            if path.exists():
+                try:
+                    self.ensemble[name] = cls.load(path)
+                    print(f"   ✅ Loaded Ensemble Agent: {name.upper()}")
+                except Exception as e:
+                    print(f"   ❌ Failed to load {name}: {e}")
+        
     def _load_model(self):
-        """Smart model loading with auto-discovery"""
-        print(f"🔍 RLAgent: Looking for model at {self.model_path}")
+        """Smart model loading with auto-discovery (Primary/Fallback)"""
+        # If we have ensemble models, pick one as primary
+        if self.ensemble:
+             self.model = self.ensemble.get('ppo') or list(self.ensemble.values())[0]
+             print(f"🤖 Active Agent set to: {type(self.model).__name__}")
+             return
+
+        print(f"🔍 RLAgent: Looking for single model at {self.model_path}")
         
         if os.path.exists(self.model_path):
             try:
@@ -77,6 +111,8 @@ class RLAgent:
                 self.model = PPO.load(str(latest_model))
                 self.model_path = str(latest_model)
                 print(f"✅ Model loaded successfully!")
+                # Add to ensemble as PPO default
+                self.ensemble['ppo'] = self.model
                 return
             except Exception as e:
                 print(f"❌ Error loading model: {e}")
@@ -86,6 +122,15 @@ class RLAgent:
         
         print(f"⚠️  Agent will act randomly (untrained)")
         self.model = None
+
+    def update_ensemble_strategy(self, recent_performance_metric):
+        """
+        Selector Logic: Switch active model based on performance.
+        (Placeholder for full implementation which needs backtesting engine here)
+        """
+        # In a real impl, we would evaluate all self.ensemble models on recent 
+        # data history and pick the winner.
+        pass
 
     def decide_action(self, observation, portfolio_state=None):
         """
@@ -158,10 +203,13 @@ class RLAgent:
                 elif len(obs) > 19:
                     obs = obs[:19]
                 
-                return self.decide_action(obs, portfolio_state)
+                # Retrieve turbulence
+                turbulence_val = float(latest.get('turbulence', 0.0))
+
+                return self.decide_action(obs, portfolio_state), turbulence_val
             else:
-                return 0
+                return 0, 0.0
         except Exception as e:
             # Log error but don't crash
             print(f"⚠️  RLAgent: Feature error - {e}")
-            return 0  # HOLD on error
+            return 0, 0.0  # HOLD on error

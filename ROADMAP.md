@@ -37,7 +37,9 @@
 
 ### 🚧 Phase 3: Intelligence & Strategy (Current Focus)
 - [ ] **Data Quality**: Ensure `scripts/update_data.py` handles gap-filling perfectly.
-- [ ] **Strategy Logic**: Connect `Brain` (AI) signals to `NeuroBridgeStrategy` in Nautilus.
+- [x] **Strategy Logic**: Connect `Brain` (AI) signals to `NeuroBridgeStrategy` in Nautilus.
+- [x] **Risk Management**: Implement Turbulence Index (FinRL) for crash protection.
+- [x] **Multi-Agent Architecture**: Upgrade Agent to support Ensemble models.
 - [ ] **Model Iteration**: Improve the RL Agent (PPO/LSTM) in `src/brain/`.
 - [ ] **Live Test**: Run the system in "Paper Mode" (Mock Money) for 1 week uninterrupted.
 

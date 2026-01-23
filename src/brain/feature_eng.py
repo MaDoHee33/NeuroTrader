@@ -4,6 +4,8 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import VolumeWeightedAveragePrice
+from scipy.spatial.distance import mahalanobis
+import scipy.linalg as la
 
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -109,6 +111,106 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     # Usually we rely on return-based or relative inputs.
     # But Env observes 'close' for execution. 
     # We keep 'close' for the Env, but maybe model should focus on derived features.
+
+    # --- 8. Short-Term Trading Features (Added for V2.1) ---
+    
+    # Fast EMAs (Trend Context on lower TF)
+    ema9 = EMAIndicator(close=df['close'], window=9)
+    df['ema_9'] = ema9.ema_indicator()
+    
+    ema21 = EMAIndicator(close=df['close'], window=21)
+    df['ema_21'] = ema21.ema_indicator()
+    
+    # Distance to Fast EMAs
+    df['dist_ema_9'] = (df['close'] - df['ema_9']) / df['close']
+    df['dist_ema_21'] = (df['close'] - df['ema_21']) / df['close']
+
+    # MACD (Momentum)
+    macd = MACD(close=df['close'])
+    df['macd'] = macd.macd()
+    df['macd_signal'] = macd.macd_signal()
+    df['macd_diff'] = macd.macd_diff() # Histogram
+    # Normalize MACD by price to make it scale-invariant approximately
+    df['macd_norm'] = df['macd'] / df['close']
+    df['macd_signal_norm'] = df['macd_signal'] / df['close']
+    df['macd_diff_norm'] = df['macd_diff'] / df['close']
+
+    # Bollinger Bands (Volatility)
+    bb = BollingerBands(close=df['close'], window=20, window_dev=2)
+    df['bb_high'] = bb.bollinger_hband()
+    df['bb_low'] = bb.bollinger_lband()
+    df['bb_width'] = (df['bb_high'] - df['bb_low']) / df['close']
+    df['dist_bb_high'] = (df['bb_high'] - df['close']) / df['close']
+    df['dist_bb_low'] = (df['close'] - df['bb_low']) / df['close']
+    
+    # Stochastic Oscillator (Overbought/Oversold)
+    # Using default windows: 14, 3
+    if 'high' in df.columns and 'low' in df.columns:
+        stoch = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
+        df['stoch_k'] = stoch.stoch() / 100.0 # Normalize 0-1
+        df['stoch_d'] = stoch.stoch_signal() / 100.0 # Normalize 0-1
+    else:
+        df['stoch_k'] = 0.5
+        df['stoch_d'] = 0.5
+
+    df = df.dropna()
+    
+
+    # --- 9. Turbulence Index (Risk Management) ---
+    # Based on FinRL implementation using Mahalanobis Distance
+    # We use a rolling window to estimate the "normal" covariance
+    
+    # Features to calculate turbulence on (Key market descriptors)
+    turb_features = ['log_ret', 'rsi', 'atr_norm'] 
+    
+    # Ensure they exist and have no NaNs for the calculation
+    if all(feat in df.columns for feat in turb_features):
+        try:
+            # Need a history window to establish baseline covariance
+            window = 50 
+            if len(df) > window:
+                # Calculate turbulence for the most recent points
+                # Use a simplified approach: Compare current point to recent history distribution
+                
+                # Get history for covariance
+                hist_data = df[turb_features].iloc[-window:].values
+                
+                try:
+                    # Calculate covariance and mean of the window
+                    cov_matrix = np.cov(hist_data, rowvar=False)
+                    mean_vector = np.mean(hist_data, axis=0)
+                    
+                    # Inverse covariance matrix
+                    # Add small noise to diagonal for stability
+                    cov_inv = la.inv(cov_matrix + np.eye(cov_matrix.shape[0]) * 1e-6)
+                    
+                    # Calculate Mahalanobis distance for each point (vectorized is hard for rolling)
+                    # We compute it for the entire series roughly, or just the last point?
+                    # For performance in live trading, we compute for the *current* row based on *past* window
+                    
+                    # Let's compute just for the last row to add the column (rest 0 for backfill speed)
+                    # Ideally this should be a rolling apply, but that's slow.
+                    # We will optimize for live usage: 
+                    # "turbulence" column will be 0 except for the last calculated point if we just did it strictly
+                    # usage pattern: add_features calls on growing history.
+                    
+                    current_vec = df[turb_features].iloc[-1].values
+                    distance = mahalanobis(current_vec, mean_vector, cov_inv)
+                    
+                    # Store turbulence value
+                    df['turbulence'] = 0.0 # Initialize 
+                    df.iloc[-1, df.columns.get_loc('turbulence')] = distance
+                    
+                except Exception as e:
+                     # Fallback if matrix singular
+                     df['turbulence'] = 0.0
+            else:
+                 df['turbulence'] = 0.0
+        except Exception as e:
+            # print(f"Turbulence calc error: {e}")
+            df['turbulence'] = 0.0
+    else:
+        df['turbulence'] = 0.0
 
     df = df.dropna()
     

@@ -4,6 +4,7 @@ from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.objects import Quantity
 
 from src.brain.rl_agent import RLAgent
+from src.brain.risk_manager import RiskManager
 from src.neuro_nautilus.config import NeuroNautilusConfig
 import asyncio
 
@@ -14,6 +15,10 @@ class NeuroBridgeStrategy(Strategy):
         
         # Initialize the Brain
         self.agent = RLAgent(model_path=config.model_path)
+        
+        # Initialize Risk Manager
+        self.risk_manager = RiskManager(config.agent_config)
+        self.risk_manager.reset_daily_metrics(10000.0) # Init with default or fetch later
         
         # Progress tracking (to avoid log spam)
         self.bar_count = 0
@@ -65,6 +70,9 @@ class NeuroBridgeStrategy(Strategy):
                 except:
                     pass
             
+            # Update Risk Manager with real balance
+            self.risk_manager.update_metrics(balance, current_time=bar.ts_init)
+
             # Get position
             position = 0.0  # Default
             if hasattr(self.portfolio, 'net_position'):
@@ -89,15 +97,24 @@ class NeuroBridgeStrategy(Strategy):
             }
         
         # Get agent decision using process_bar
+        # Expecting (action, turbulence_val) tuple now
         try:
-            action = self.agent.process_bar(bar_dict, portfolio_state)
-            # process_bar returns int directly (0=HOLD, 1=BUY, 2=SELL)
+            action, turbulence_val = self.agent.process_bar(bar_dict, portfolio_state)
+            
+            # 2.5 Check Turbulence
+            self.risk_manager.check_turbulence(turbulence_val)
+            
         except Exception as e:
             self.log.error(f"Agent failed to decide: {e}")
             return
         
         # 3. Execute based on action
-        volume = 1  # Match size_precision=0 (minimum is 1)
+        # Pre-check Risk Rules
+        # Default volume (could be dynamic later)
+        volume = 1 
+        
+        if not self.risk_manager.check_order(self.instrument_id, volume, action, current_time=bar.ts_init):
+            return # Blocked by Risk Manager
 
         if action == 1:  # BUY
             self.trade_count += 1

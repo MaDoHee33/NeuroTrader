@@ -14,8 +14,10 @@ class TradingEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None):
+    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend'):
         super(TradingEnv, self).__init__()
+        
+        self.agent_type = agent_type.lower() # scalper, swing, trend
         
         # Determine if single DF or Dict
         if isinstance(df_dict, pd.DataFrame):
@@ -45,14 +47,18 @@ class TradingEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         
         # Updated Hybrid Features
-        self.feature_cols = [
-            'body_size', 'upper_wick', 'lower_wick', 'is_bullish',
-            'ema_50', 'dist_ema_50', 'dist_ema_200',
-            'rsi', 'atr_norm',
-            'dist_to_high', 'dist_to_low',
-            'log_ret', 'log_ret_lag_1', 'log_ret_lag_2',
-            'hour_sin', 'hour_cos', 'day_sin', 'day_cos'
-        ]
+        if feature_cols is not None:
+            self.feature_cols = feature_cols
+        else:
+            # Default Long-Term features (V2)
+            self.feature_cols = [
+                'body_size', 'upper_wick', 'lower_wick', 'is_bullish',
+                'ema_50', 'dist_ema_50', 'dist_ema_200',
+                'rsi', 'atr_norm',
+                'dist_to_high', 'dist_to_low',
+                'log_ret', 'log_ret_lag_1', 'log_ret_lag_2',
+                'hour_sin', 'hour_cos', 'day_sin', 'day_cos'
+            ]
         
         # Check cols on first asset
         missing_cols = [c for c in self.feature_cols if c not in self.df.columns]
@@ -93,6 +99,10 @@ class TradingEnv(gym.Env):
         self.equity = self.initial_balance
         self.trades_history = []
         self.returns_history.clear()
+        
+        # Initialize Risk Manager with starting state
+        self.risk_manager.reset_daily_metrics(self.balance)
+        self.risk_manager.update_metrics(self.equity, self.df.index[self.current_step] if isinstance(self.df.index[0], (pd.Timestamp, datetime)) else None)
         
         print(f"🔄 Reset [{self.current_asset_name}]: Balance=${self.balance:.2f}")
         
@@ -239,14 +249,41 @@ class TradingEnv(gym.Env):
         
         # 6. Composite reward (weighted combination)
         # Weights based on research best practices
-        reward = (
-            0.5 * log_return +           # Base profit/loss
-            0.3 * sharpe_contribution +  # Risk-adjusted performance
-            0.1 * transaction_penalty +  # Discourage over-trading
-            0.1 * drawdown_penalty +     # Risk management
-            0.1 * holding_reward +       # Trend following
-            1.0 * risk_penalty           # Hard Risk violation penalty
-        )
+        # --- TRINITY REWARD SYSTEM ---
+        if self.agent_type == 'scalper':
+            # SCALPER: Realized PnL + Speed
+            # Penalize time in market to force quick exits
+            exposure_penalty = -0.005 if self.position > 0 else 0
+            
+            # Bonus for immediate green ticks
+            momentum_bonus = 0
+            if self.position > 0 and log_return > 0:
+                momentum_bonus = log_return * 2.0
+            
+            reward = (log_return * 100) + exposure_penalty + momentum_bonus + transaction_penalty + (risk_penalty * 2)
+
+        elif self.agent_type == 'swing':
+            # SWING: Trend Capturing
+            # Use the research-based mix but emphasize PnL + Trend
+            reward = (
+                0.7 * (log_return * 100) +
+                0.1 * sharpe_contribution +
+                0.1 * transaction_penalty +
+                0.1 * holding_reward + 
+                1.0 * risk_penalty
+            )
+            
+        else:
+            # TREND (Default): The existing Research-Based Formula
+            # Good for long-term holding
+            reward = (
+                0.5 * log_return +           # Base profit/loss
+                0.3 * sharpe_contribution +  # Risk-adjusted performance
+                0.1 * transaction_penalty +  # Discourage over-trading
+                0.1 * drawdown_penalty +     # Risk management
+                0.1 * holding_reward +       # Trend following
+                1.0 * risk_penalty           # Hard Risk violation penalty
+            )
         
         # 6. Portfolio balance bonus (encourage diversification)
         # Small bonus for keeping balanced portfolio

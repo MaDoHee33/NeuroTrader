@@ -1,7 +1,7 @@
 
 import logging
 from datetime import datetime, date
-from src.data.economic_calendar import EconomicCalendar
+from src.skills.news_watcher import NewsWatcher
 
 class RiskManager:
     """
@@ -11,8 +11,20 @@ class RiskManager:
         self.logger = logging.getLogger("RiskManager")
         self.config = config or {}
         
+        # Skills
+        self.news_watcher = NewsWatcher(impact_levels=['High'], buffer_minutes=30)
+        # Try update on init (for live mode), but don't crash if offline
+        # try:
+        #     self.news_watcher.update_calendar()
+        # except:
+        #     pass
+        
         # 1. Hard Limits
-        # Default: Max 1.0 Lot per trade
+        # Dynamic Lot Sizing Configuration
+        self.dynamic_lot_sizing = self.config.get('dynamic_lot_sizing', True) # Enable by default for V2.1
+        self.lots_per_10k_equity = self.config.get('lots_per_10k', 5.0)       # Allow 5.0 lots per $10k
+        
+        # Default: Max 1.0 Lot per trade (Fallback/Fixed)
         self.max_lots_per_trade = self.config.get('max_lots', 1.0)
         
         # Default: 5% Daily Loss Limit
@@ -20,9 +32,14 @@ class RiskManager:
         
         # Default: 20% Max Drawdown (Circuit Breaker)
         self.max_drawdown_limit_pct = self.config.get('max_drawdown_pct', 0.20)
+
+        # Default: Turbulence Threshold (Typical Chi-Square cutoff for 3 degrees of freedom is ~7.8 for 95%, 11.3 for 99%)
+        # We start conservative with 15.0 or dynamic
+        self.turbulence_limit = self.config.get('turbulence_limit', 15.0)
         
         # 3. News / Sentiment
-        self.calendar = EconomicCalendar(self.config.get('calendar_csv_path'))
+        # self.calendar = EconomicCalendar(self.config.get('calendar_csv_path'))
+        self.calendar = None # Disabled because file is missing
         self.news_window_minutes = self.config.get('news_window_minutes', 30)
 
         # 2. State Tracking
@@ -33,6 +50,7 @@ class RiskManager:
         
         self.is_circuit_breaker_active = False
         self.daily_stop_triggered = False
+        self.turbulence_triggered = False
 
     def reset_daily_metrics(self, balance):
         """Resets daily trackers at start of new day."""
@@ -79,6 +97,20 @@ class RiskManager:
                 self.logger.warning(f"🛑 DAILY LOSS LIMIT REACHED! Loss: {daily_loss_pct:.2%}")
                 self.daily_stop_triggered = True
 
+    def check_turbulence(self, turbulence_index):
+        """
+        Checks if market turbulence exceeds safety threshold.
+        """
+        if turbulence_index > self.turbulence_limit:
+            if not self.turbulence_triggered:
+                self.logger.warning(f"🌪️ TURBULENCE ALERT! Index: {turbulence_index:.2f} > {self.turbulence_limit}")
+                self.turbulence_triggered = True
+        else:
+             if self.turbulence_triggered:
+                 self.logger.info(f"🌤️ Turbulence subsided. Index: {turbulence_index:.2f}")
+                 self.turbulence_triggered = False
+
+
     def check_order(self, symbol, volume, order_type, current_time=None):
         """
         Validates an order against risk rules.
@@ -94,16 +126,33 @@ class RiskManager:
             self.logger.warning("Order Blocked: Daily Loss Limit Reached.")
             return False
 
-        # Rule 2: Max Lots
-        if volume > self.max_lots_per_trade:
-            self.logger.warning(f"Order Blocked: Volume {volume} exceeds limit {self.max_lots_per_trade}")
+        # Rule 1.5: Turbulence
+        if self.turbulence_triggered:
+             self.logger.warning("Order Blocked: High Market Turbulence.")
+             return False
+
+        # Rule 2: Max Lots (Dynamic)
+        # Use current balance, fallback to daily start, fallback to 0
+        balance_for_calc = self.current_balance if self.current_balance is not None else self.daily_start_balance
+        
+        if self.dynamic_lot_sizing and balance_for_calc:
+             # Scale allowed lots based on equity
+             # e.g. Balance $5000 -> (5000/10000) * 5.0 = 2.5 Lots allowed
+             allowed_lots = (balance_for_calc / 10000.0) * self.lots_per_10k_equity
+             # Ensure at least minimal trade possibility (e.g. 0.01 lot) or fallback
+             allowed_lots = max(allowed_lots, 0.01) 
+        else:
+             allowed_lots = self.max_lots_per_trade
+
+        if volume > allowed_lots:
+            self.logger.warning(f"Order Blocked: Volume {volume:.2f} exceeds limit {allowed_lots:.2f} (Balance: {self.current_balance})")
             return False
             
         # Rule 3: News Filter (High Impact)
-        if current_time:
-             is_news, event_name = self.calendar.is_high_impact_window(current_time, self.news_window_minutes)
-             if is_news:
-                 self.logger.warning(f"Order Blocked: High Impact News Event Nearby ({event_name})")
+        if current_time and self.news_watcher:
+             is_danger, reason = self.news_watcher.is_market_dangerous(current_time)
+             if is_danger:
+                 self.logger.warning(f"Order Blocked: {reason}")
                  return False
 
         return True

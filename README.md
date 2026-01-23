@@ -1,55 +1,65 @@
-# 🧠 NeuroTrader (Windows Edition)
-**ระบบเทรด AI ด้วย Reinforcement Learning (PPO) สำหรับ XAUUSD**
+# 🧠 NeuroTrader V3 (The Trinity System)
+**Advanced Agentic Trading System with Behavioral Analysis & Autonomous Skills**
 
-โปรเจกต์นี้ถูกปรับแต่งให้ทำงานได้อย่างสมบูรณ์บน **Windows 10/11** โดยใช้ **PyTorch CPU** และ **Nautilus Trader**
-รองรับการเรียนรู้จากข้อมูลย้อนหลัง (Historical Data) และจำลองการเทรดด้วยสภาพแวดล้อมที่สมจริง
-
-## 📋 สถานะปัจจุบัน (Current Status)
-- **Environment:** Windows Native (ไม่ต้องใช้ WSL)
-- **Engine:** PyTorch (CPU-Optimization) + Stable Baselines 3
-- **Data:** XAUUSD M15 (2014 - 2026) ~200,000 แท่ง
-- **Model:** Compatible with Numpy 1.x (Stable on Windows)
-
-## 🛠️ การติดตั้ง (Setup)
-1. **ติดตั้ง Python 3.10+**
-2. **รันคำสั่งติดตั้ง:**
-   ```powershell
-   setup_env.bat
-   ```
-   (สคริปต์จะสร้าง Virtual Environment และลง Library ที่จำเป็นทั้งหมดให้)
-
-## 🚀 การใช้งาน (Usage)
-
-### 1. การเทรนโมเดล (Training)
-เพื่อเริ่มสอน AI ด้วยข้อมูลที่มีอยู่:
-```powershell
-python -m src.brain.train --timesteps 1000000 --model-name ppo_neurotrader_v4
-```
-- `timesteps`: จำนวนรอบการเรียนรู้ (แนะนำ 1M - 10M)
-- `model-name`: ชื่อไฟล์โมเดลที่จะบันทึก
-
-### 2. การทดสอบย้อนหลัง (Backtesting)
-เพื่อทดสอบโมเดลที่เทรนเสร็จแล้ว:
-```powershell
-python perform_local_backtest.py
-```
-- ระบบจะโหลดโมเดลล่าสุดจาก `models/checkpoints/`
-- ผลลัพธ์จะถูกบันทึกเป็นไฟล์ `local_backtest_report.md`
-
-### 3. การนำเข้าข้อมูลใหม่ (Import Data)
-หากต้องการอัปเดตข้อมูลราคา (CSV):
-1. นำไฟล์ CSV ไปวางที่ `data/raw/XAUUSDm_M15.csv`
-2. รันคำสั่ง:
-   ```powershell
-   python fix_data.py
-   ```
-   (ระบบจะแปลง CSV เป็น Parquet เข้าสู่ Nautilus Catalog โดยอัตโนมัติ)
-
-## 📁 โครงสร้างโปรเจกต์
-- `src/brain/`: โค้ดส่วน AI (Agent, Environment, Training)
-- `data/nautilus_catalog/`: ฐานข้อมูลราคา (Parquet)
-- `models/checkpoints/`: ที่เก็บไฟล์โมเดล (.zip)
-- `docs/`: เอกสารประกอบและคู่มือ (ภาษาไทย)
+NeuroTrader V3 evolves beyond a single model into a **Multi-Agent Trinity System**, capable of adapting to different market phases (Scalping, Swinging, Trending). It is augmented with **Autonomous Skills** (News Watching, Reporting) and **Hyperparameter Tuning**.
 
 ---
-**Note:** โปรเจกต์นี้ใช้ Numpy 1.26.4 เพื่อความเสถียรสูงสุดบน Windows ห้ามอัปเดตเป็น Numpy 2.0+ จนกว่า Library อื่นๆ จะรองรับ
+
+## 🏗️ Architecture: The Trinity System
+We deploy 3 specialized agents, each with unique reward functions and data horizons:
+
+| Agent Role | Timeframe | Strategy | Reward Logic |
+| :--- | :--- | :--- | :--- |
+| **⚔️ Scalper** | M5 | Hit & Run | High PnL + **Time Penalty** (Force Short Holding) |
+| **🛡️ Swing** | H1 | Trend Waves | Hybrid (PnL + Trend Following) |
+| **👑 Trend** | D1 | Wealth Gen | Buy & Hold (Sharpe Ratio + Drawdown Penalty) |
+
+---
+
+## ⚡ Key Features (V3)
+### 1. Autonomous Skills (`src/skills/`)
+-   **📰 News Watcher**: Automatically connects to Economic Calendars to detect high-impact events (e.g., FOMC, Non-Farm). **Blocks trades** 30 mins before critical news.
+-   **📝 Auto Reporter**: Generates professional **Markdown/PDF Reports** after every backtest, analyzing Win Rate, Holding Time, and Market Exposure.
+
+### 2. Hyperparameter Tuning (`scripts/tune_trinity.py`)
+-   Powered by **Optuna**.
+-   Optimizes `Gamma`, `Learning Rate`, and `Batch Size` to find the perfect balance between Profit and Behavior.
+-   Includes **Behavioral Penalties** in the objective function (e.g., punishing a Scalper for holding > 1 hour).
+
+### 3. Developer Experience (`.cursor/mcp.json`)
+-   Integrated **Context7 MCP Server**: Allows the AI Developer to fetch up-to-date documentation for libraries (Pandas, TA-Lib) in real-time.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Train the Trinity (Batch)
+Train all models sequentially:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/train_trinity_full.ps1
+```
+*Individual training:* `python scripts/train_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet`
+
+### 2. Hyperparameter Tuning (Optimize Behavior)
+Fix "Buy & Hold" behavior for Scalpers:
+```bash
+python scripts/tune_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --trials 50
+```
+
+### 3. Verification & Reporting
+Run backtests with auto-reporting:
+```bash
+python scripts/backtest_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --model models/trinity_scalper_best.zip
+```
+*Reports saved to `reports/`*
+
+---
+
+## 📁 Project Structure
+-   `src/brain/`: Core RL Agents (PPO/LSTM) & Reward Functions
+-   `src/skills/`: Autonomous Capabilities (News, Report)
+-   `scripts/`: Automation Scripts (Train, Backtest, Tune)
+-   `data/`: Processed Parquet Data
+
+---
+**Status:** ✅ V3 Upgrade Complete (Jan 2026) | **OS:** Windows Native
