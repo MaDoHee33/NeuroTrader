@@ -380,7 +380,28 @@ python scripts/autopilot.py compare --role X # Compare versions
 -   **US 10Y Yield:** Yahoo Finance (`^TNX`)
 -   **DXY (Dollar Index):** Yahoo Finance (`DX-Y.NYB`)
 
-**Status:** Module tested & ready. Waiting for Phase 1.6 to finish before integration.
+**Status:** Phase 1.6 Experiments Paused (After Model 1)
+
+---
+
+### 18. Phase 1.6 Result: Aggressive Model Failure
+**Date:** 2026-01-24
+**Model:** `trinity_scalper_XAUUSD_M5_aggressive.zip`
+**Constraints:** Max Holding 36 steps, Penalty -0.1 (Start 1hr)
+**Results:**
+-   **Return:** -0.85% (Loss)
+-   **Avg Holding:** 198 Steps (Misleading metric)
+-   **Behavior:** Panic Trading (Force Sell -> Buy Back immediately). The constraints were too strict, causing the model to churn and lose on fees/spread.
+
+**Decision:**
+-   Experiments paused to analyze.
+-   **Next Step:** Resume with **Balanced Model** (Medium constraints) which allows more breathing room.
+
+---
+
+### 19. Phase 2: Sentiment Foundation (Ready)
+**Date:** 2026-01-24
+**Status:** Code implemented (`src/skills/sentiment_fetcher.py`). Waiting for a stable Scalper model before integrating.
 
 
 **Status:** Training Scalper v2 with Exit Signals (500k steps)
