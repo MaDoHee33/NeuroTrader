@@ -204,7 +204,9 @@ def train_trinity(
     total_timesteps: int = 1000000,
     resume: bool = False,
     register: bool = True,
-    checkpoint_freq: int = 100000
+    checkpoint_freq: int = 100000,
+    reward_config: dict = None,
+    suffix: str = ""
 ):
     """
     Train a Trinity agent with checkpointing and registry integration.
@@ -216,6 +218,8 @@ def train_trinity(
         resume: Resume from checkpoint if available
         register: Register model in registry after training
         checkpoint_freq: Save checkpoint every N steps
+        reward_config: Dictionary of reward parameters (optional)
+        suffix: Optional suffix for model and checkpoint names
     """
     role = role.lower()
     symbol, timeframe = extract_symbol_timeframe(data_path)
@@ -240,10 +244,20 @@ def train_trinity(
     print(f"Training samples: {len(train_df):,}")
     
     # Create environment
-    env = DummyVecEnv([lambda: TradingEnv(train_df, agent_type=role)])
+    env_kwargs = {'agent_type': role}
+    if reward_config:
+        env_kwargs['reward_config'] = reward_config
+        print(f"🔧 Using Custom Reward Config: {reward_config}")
+        
+    env = DummyVecEnv([lambda: TradingEnv(train_df, **env_kwargs)])
     
     # Checkpoint directory
-    checkpoint_dir = ROOT_DIR / "models" / "checkpoints" / f"{role}_{symbol}_{timeframe}"
+    model_name_base = f"{role}_{symbol}_{timeframe}"
+    if suffix:
+        model_name_base += f"_{suffix}"
+        print(f"🏷️  Using Model Suffix: {suffix}")
+    
+    checkpoint_dir = ROOT_DIR / "models" / "checkpoints" / model_name_base
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     # Check for existing checkpoint
@@ -306,8 +320,9 @@ def train_trinity(
             print(f"\n📋 Registering model...")
             registry = ModelRegistry(str(ROOT_DIR / "models"))
             
-            # Run quick evaluation for metrics
-            metrics = quick_evaluate(model, df.iloc[train_size:], role)
+            # Run quick evaluation for metrics (with custom config)
+            # Pass reward config to quick_evaluate if needed
+            metrics = quick_evaluate(model, df.iloc[train_size:], role, reward_config)
             
             metadata = registry.register_model(
                 model_path=f"{final_model_path}.zip",
@@ -317,7 +332,8 @@ def train_trinity(
                 training_steps=total_timesteps,
                 training_config=params,
                 metrics=metrics,
-                data_path=data_path
+                data_path=data_path,
+                tags=[timeframe, symbol, "auto_trained"] + ([suffix] if suffix else [])
             )
             
             # Auto-promote if better
@@ -352,11 +368,15 @@ def train_trinity(
         # Keep checkpoints for debugging/resume
 
 
-def quick_evaluate(model, test_df: pd.DataFrame, role: str) -> dict:
+def quick_evaluate(model, test_df: pd.DataFrame, role: str, reward_config: dict = None) -> dict:
     """Quick evaluation on test set for metrics."""
     from src.analysis.behavior import calculate_behavioral_metrics
     
-    env = TradingEnv(test_df, agent_type=role)
+    env_kwargs = {'agent_type': role}
+    if reward_config:
+        env_kwargs['reward_config'] = reward_config
+        
+    env = TradingEnv(test_df, **env_kwargs)
     obs, _ = env.reset()
     done = False
     history = []
@@ -413,7 +433,32 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint-freq', type=int, default=100000,
                        help="Checkpoint frequency (steps)")
     
+    # Experiment Arguments
+    parser.add_argument("--suffix", type=str, default="", help="Model name suffix (e.g. 'experiment1')")
+    parser.add_argument("--max_steps_holding", type=int, default=None, help="Max steps to hold position")
+    parser.add_argument("--sniper_start", type=int, default=None, help="Steps before sniper penalty starts")
+    parser.add_argument("--sniper_amt", type=float, default=None, help="Sniper penalty amount")
+    parser.add_argument("--force_exit_penalty", type=float, default=None, help="Force exit penalty")
+    
     args = parser.parse_args()
+    
+    # Construct reward config
+    reward_config = {}
+    if args.max_steps_holding: reward_config['max_holding_steps'] = args.max_steps_holding
+    if args.sniper_start: reward_config['sniper_penalty_start'] = args.sniper_start
+    if args.sniper_amt: reward_config['sniper_penalty_amt'] = args.sniper_amt
+    if args.force_exit_penalty: reward_config['force_exit_penalty'] = args.force_exit_penalty
+
+    train_trinity(
+        role=args.role,
+        data_path=args.data,
+        total_timesteps=args.steps,
+        resume=args.resume,
+        register=not args.no_register,
+        checkpoint_freq=args.checkpoint_freq,
+        reward_config=reward_config if reward_config else None,
+        suffix=args.suffix
+    )
     
     if args.role == 'scalper' and 'M5' not in args.data and 'M1' not in args.data:
         print("⚠️ WARNING: Scalpers should preferably trade on M1/M5 data.")

@@ -305,10 +305,10 @@ class MT5Driver:
 | Property | Value |
 |----------|-------|
 | **Timeframe** | M5, M15 |
-| **Holding Time** | < 20 steps (< 100 นาที) |
-| **Gamma** | 0.85 (discount อนาคตน้อย) |
-| **Strategy** | Hit & Run |
-| **Reward** | `PnL * 100 - time_penalty` |
+| **Holding Time** | **Max 36 steps (3 ชม.)** - Force Exit |
+| **Gamma** | **0.80** (Short-term focus) |
+| **Strategy** | **Sniper / Hit & Run** |
+| **Reward** | `Realized PnL ONLY - Sniper Penalty` |
 
 ### 5.2 Swing (🛡️ นักจับคลื่น)
 

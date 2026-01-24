@@ -14,7 +14,7 @@ class TradingEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend'):
+    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend', reward_config: dict = None):
         super(TradingEnv, self).__init__()
         
         self.agent_type = agent_type.lower() # scalper, swing, trend
@@ -42,6 +42,13 @@ class TradingEnv(gym.Env):
         
         # Sharpe ratio tracking
         self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
+        
+        # Reward Configuration (Default values if not provided)
+        self.reward_config = reward_config if reward_config else {}
+        self.time_limit = self.reward_config.get('max_holding_steps', 36)
+        self.sniper_penalty_start = self.reward_config.get('sniper_penalty_start', 12)
+        self.sniper_penalty_amt = self.reward_config.get('sniper_penalty_amt', 0.1)
+        self.force_exit_penalty = self.reward_config.get('force_exit_penalty', 1.0)
         
         # Action Space: 0=HOLD, 1=BUY, 2=SELL
         self.action_space = spaces.Discrete(3)
@@ -77,7 +84,7 @@ class TradingEnv(gym.Env):
         if missing_cols:
             raise ValueError(f"Dataframe missing required columns: {missing_cols}")
 
-        num_features = len(self.feature_cols) + 2 # +2 for balance and position
+        num_features = len(self.feature_cols) + 3 # +3 for balance, position, and steps_in_position
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(num_features,), dtype=np.float32
         )
@@ -88,6 +95,7 @@ class TradingEnv(gym.Env):
         self.position = 0.0 # Asset amount held
         self.equity = initial_balance
         self.trades_history = []
+        self.steps_in_position = 0  # Track how long we've been in a position
         
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
@@ -103,13 +111,13 @@ class TradingEnv(gym.Env):
         self.current_step = 0
         initial_price = self.df.iloc[0]['close']
         
-        # Start Balanced
-        self.balance = self.initial_balance * 0.5  # 50% cash
-        position_value = self.initial_balance * 0.5  # 50% in asset  
-        self.position = position_value / initial_price  # Convert to units
+        # Start with 100% CASH, 0 position (forces model to learn entry/exit)
+        self.balance = self.initial_balance  # 100% cash
+        self.position = 0.0  # 0 position - model must BUY to enter
         
         self.equity = self.initial_balance
         self.trades_history = []
+        self.steps_in_position = 0  # Reset holding time
         self.returns_history.clear()
         
         # Initialize Risk Manager with starting state
@@ -130,6 +138,8 @@ class TradingEnv(gym.Env):
         # Add account state
         obs.append(self.balance)
         obs.append(self.position)
+        # Add holding time (normalized: 0-1 where 1 = 100+ steps)
+        obs.append(min(self.steps_in_position / 100.0, 1.0))
         
         return np.array(obs, dtype=np.float32)
 
@@ -176,6 +186,7 @@ class TradingEnv(gym.Env):
                         self.position += units
                         self.balance -= cost
                         trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
+                        self.steps_in_position = 0  # Reset holding counter on entry
                     else:
                         # Blocked
                         risk_penalty = -0.1 # Small penalty for attempting forbidden trade
@@ -199,6 +210,24 @@ class TradingEnv(gym.Env):
                 self.balance += (revenue - fee)
                 self.position = 0
                 trade_info = {'action': 'SELL', 'price': current_price, 'units': units_to_sell}
+                self.steps_in_position = 0  # Reset on exit
+        
+        # Update holding time counter
+        if self.position > 0:
+            self.steps_in_position += 1
+            
+            # --- FORCE EXIT LOGIC (Scalper Hard Constraint) ---
+            if self.agent_type == 'scalper' and self.steps_in_position >= self.time_limit:
+                # Force Sell
+                current_price = self.df.iloc[self.current_step]['close']
+                revenue = self.position * current_price
+                fee = revenue * 0.001
+                self.balance += (revenue - fee)
+                self.position = 0
+                self.steps_in_position = 0
+                # Record forced exit
+                trade_info = {'action': 'FORCE_SELL', 'price': current_price, 'units': self.position}
+
         
         # Update metrics AFTER action (to see new equity)
         # But we need equity first. So we calculate equity next block.
@@ -262,17 +291,37 @@ class TradingEnv(gym.Env):
         # 6. Composite reward (weighted combination)
         # Weights based on research best practices
         # --- TRINITY REWARD SYSTEM ---
+        # 6. Composite reward (weighted combination)
+        # Weights based on research best practices
+        # --- TRINITY REWARD SYSTEM ---
         if self.agent_type == 'scalper':
-            # SCALPER: Realized PnL + Speed
-            # Penalize time in market to force quick exits
-            exposure_penalty = -0.005 if self.position > 0 else 0
+            # SCALPER V4 (HARD MODE): Realized PnL Only + Sniper Penalty
             
-            # Bonus for immediate green ticks
-            momentum_bonus = 0
-            if self.position > 0 and log_return > 0:
-                momentum_bonus = log_return * 2.0
+            # 1. Base Reward: 0 for holding (no unrealized gains!)
+            reward = 0
             
-            reward = (log_return * 100) + exposure_penalty + momentum_bonus + transaction_penalty + (risk_penalty * 2)
+            # 2. Realized PnL Reward (Huge bonus if profitable)
+            if trade_info is not None and (trade_info['action'] == 'SELL' or trade_info['action'] == 'FORCE_SELL'):
+                 if log_return > 0:
+                     # Realized Profit! Give huge reward
+                     reward += log_return * 100.0
+                 else:
+                     # Realized Loss. Penalize proportional to loss
+                     reward += log_return * 50.0 # Loss is naturally negative
+            
+            # 3. Sniper Penalty (Time Decay)
+            # If finding trade takes time, that's fine.
+            # But if IN POSITION and NOT PROFITING quickly -> Punishment
+            if self.position > 0:
+                if self.steps_in_position > self.sniper_penalty_start: # Late stage
+                    # Heavy penalty for loitering
+                    reward -= self.sniper_penalty_amt
+                elif self.steps_in_position > (self.sniper_penalty_start // 2): # Mid stage
+                    reward -= (self.sniper_penalty_amt / 10.0)
+
+            # 4. Force Exit Penalty
+            if trade_info is not None and trade_info.get('action') == 'FORCE_SELL':
+                reward -= self.force_exit_penalty # Punishment for failing to close on time
 
         elif self.agent_type == 'swing':
             # SWING: Trend Capturing

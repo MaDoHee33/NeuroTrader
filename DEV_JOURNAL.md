@@ -338,4 +338,49 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Updated `TradingEnv`:**
 -   Added 5 exit signal features to default observation space (23 → 28 features)
 
+**Status:** Testing Scalper v2
+
+---
+
+### 16. Phase 1.5: Fix Buy & Hold (Hard Constraints)
+**Date:** 2026-01-24
+**Problem:** Scalper v2 still exhibited "Buy & Hold" behavior (9,761 steps holding) despite new features.
+**Root Cause:** Reward imbalance (accumulated profit > penalty) and lack of hard exit logic.
+
+**Solution (Hard Mode Implemented):**
+1.  **Force Exit:** `max_holding_steps = 36` (3 hours). Position closed automatically.
+2.  **Realized Reward Only:**
+    -   `HOLD`: Reward = 0 (No unrealized gains allowed).
+    -   `SELL`: Reward = Realized PnL (Huge bonus/penalty).
+3.  **Sniper Penalty:** Aggressive exponential penalty if holding > 12 steps without profit.
+
+**Status:** Retrying with Multi-Model Experiments (Phase 1.6)
+
+---
+
+### 17. Phase 1.6: Scalper Experiments (Sequential Tuning)
+**Date:** 2026-01-24
+**Goal:** Find optimal balance between "Force Exit" penalty and "Risk Taking".
+
+**Experiments Launched:**
+1.  **Aggressive:** Max 36 steps, Penalty -0.1 (Starts at 1 hr)
+2.  **Balanced:** Max 48 steps, Penalty -0.02 (Starts at 2 hr)
+3.  **Relaxed:** Max 96 steps, Penalty -0.01 (Starts at 4 hr)
+
+**Execution:** Running sequentially via `scripts/train_experiments.ps1`
+
+---
+
+### 18. Phase 2: Sentiment Foundation
+**Date:** 2026-01-24
+**Work:** Created `src/skills/sentiment_fetcher.py` while waiting for training.
+**Features Implemented:**
+-   **Fear & Greed Index:** API integration (alternative.me)
+-   **VIX (Volatility):** Yahoo Finance (`^VIX`)
+-   **US 10Y Yield:** Yahoo Finance (`^TNX`)
+-   **DXY (Dollar Index):** Yahoo Finance (`DX-Y.NYB`)
+
+**Status:** Module tested & ready. Waiting for Phase 1.6 to finish before integration.
+
+
 **Status:** Training Scalper v2 with Exit Signals (500k steps)
