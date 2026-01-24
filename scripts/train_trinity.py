@@ -1,9 +1,17 @@
+"""
+NeuroTrader Trinity Training Script (V2)
+=========================================
+Enhanced training script with:
+- Checkpoint saving (resumable training)
+- Model Registry integration
+- Auto-backtest and evaluation
+"""
 
 import argparse
 import os
-import glob
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # Setup paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -13,20 +21,54 @@ import pandas as pd
 import numpy as np
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from src.brain.env.trading_env import TradingEnv
 from src.brain.feature_eng import add_features
+from src.skills.model_registry import ModelRegistry
 
-def load_data(data_path):
+
+class TrainingProgressCallback(BaseCallback):
+    """Custom callback for tracking training progress and saving state."""
+    
+    def __init__(self, save_path: str, save_freq: int = 100000, verbose: int = 1):
+        super().__init__(verbose)
+        self.save_path = Path(save_path)
+        self.save_freq = save_freq
+        self.save_path.mkdir(parents=True, exist_ok=True)
+        
+    def _on_step(self) -> bool:
+        if self.n_calls % self.save_freq == 0:
+            checkpoint_path = self.save_path / f"checkpoint_{self.n_calls}"
+            self.model.save(str(checkpoint_path))
+            
+            # Save progress state
+            state = {
+                "steps_completed": self.n_calls,
+                "timestamp": datetime.now().isoformat()
+            }
+            import json
+            with open(self.save_path / "training_state.json", 'w') as f:
+                json.dump(state, f)
+                
+            if self.verbose:
+                print(f"\n💾 Checkpoint saved: {checkpoint_path} ({self.n_calls:,} steps)")
+        return True
+
+
+def load_data(data_path: str) -> pd.DataFrame:
+    """Load and preprocess training data."""
     print(f"Loading data from {data_path}...")
+    
     if data_path.endswith('.parquet'):
         df = pd.read_parquet(data_path)
     elif data_path.endswith('.csv'):
         df = pd.read_csv(data_path)
     else:
-        raise ValueError("Unsupported format")
+        raise ValueError("Unsupported format. Use .parquet or .csv")
         
     print(f"Initial shape: {df.shape}")
+    
     if 'time' in df.columns:
         df['time'] = pd.to_datetime(df['time'])
         df.set_index('time', drop=False, inplace=True)
@@ -35,7 +77,6 @@ def load_data(data_path):
         df.set_index('Date', drop=False, inplace=True)
         
     df.sort_index(inplace=True)
-    print(f"Shape after index: {df.shape}")
     
     try:
         df = add_features(df)
@@ -45,106 +86,343 @@ def load_data(data_path):
         
     before_drop = len(df)
     df.dropna(inplace=True)
-    after_drop = len(df)
-    print(f"Dropped {before_drop - after_drop} rows. Final shape: {df.shape}")
+    print(f"Dropped {before_drop - len(df)} rows. Final shape: {df.shape}")
     
-    if len(df) == 0:
-        print("DEBUG: Columns with NaNs:")
-        print(df.isnull().sum())
-        
     return df
 
-def train_trinity(role, data_path, total_timesteps=1000000):
-    role = role.lower()
-    print(f"\n--- Initiating Trinity Training Protocol ---")
-    print(f"Role: {role.upper()}")
-    print(f"Data: {data_path}")
+
+def get_hyperparameters(role: str) -> dict:
+    """Get hyperparameters for a role, checking for optimized params first."""
     
-    # 1. Configuration per Role
-    # Defaults
-    if role == 'scalper':
-        n_steps = 256
-        batch_size = 64
-        gamma = 0.85 
-        learning_rate = 3e-4
-        ent_coef = 0.01
-    elif role == 'swing':
-        n_steps = 1024
-        batch_size = 128
-        gamma = 0.95 
-        learning_rate = 2e-4
-        ent_coef = 0.005
-    else: # trend
-        n_steps = 2048
-        batch_size = 256
-        gamma = 0.999 
-        learning_rate = 1e-4
-        ent_coef = 0.001
-        
-    # Check for Optimized Params
-    param_file = f"best_params_{role}.json"
-    if os.path.exists(param_file):
+    # Default parameters per role
+    defaults = {
+        'scalper': {
+            'n_steps': 256,
+            'batch_size': 64,
+            'gamma': 0.85,
+            'learning_rate': 3e-4,
+            'ent_coef': 0.01
+        },
+        'swing': {
+            'n_steps': 1024,
+            'batch_size': 128,
+            'gamma': 0.95,
+            'learning_rate': 2e-4,
+            'ent_coef': 0.005
+        },
+        'trend': {
+            'n_steps': 2048,
+            'batch_size': 256,
+            'gamma': 0.999,
+            'learning_rate': 1e-4,
+            'ent_coef': 0.001
+        }
+    }
+    
+    params = defaults.get(role, defaults['trend'])
+    
+    # Check for Optuna-optimized params
+    param_file = ROOT_DIR / f"best_params_{role}.json"
+    if param_file.exists():
         print(f"✨ Loading Optimized Hyperparameters from {param_file}")
         import json
         with open(param_file, 'r') as f:
-            params = json.load(f)
-            n_steps = params.get('n_steps', n_steps)
-            batch_size = params.get('batch_size', batch_size)
-            gamma = params.get('gamma', gamma)
-            learning_rate = params.get('learning_rate', learning_rate)
-            ent_coef = params.get('ent_coef', ent_coef)
-            print(f"   -> Gamma: {gamma:.4f}, LR: {learning_rate:.6f}, Batch: {batch_size}")
-        
-    # 2. Load Data
-    df = load_data(data_path)
+            optimized = json.load(f)
+            params.update(optimized)
+            print(f"   → Gamma: {params['gamma']:.4f}, LR: {params['learning_rate']:.6f}")
     
-    # 3. Split Data (Train/Test)
+    return params
+
+
+def find_checkpoint(checkpoint_dir: Path) -> tuple:
+    """Find latest checkpoint in directory."""
+    if not checkpoint_dir.exists():
+        return None, 0
+    
+    state_file = checkpoint_dir / "training_state.json"
+    if not state_file.exists():
+        return None, 0
+    
+    import json
+    with open(state_file, 'r') as f:
+        state = json.load(f)
+    
+    steps = state.get("steps_completed", 0)
+    checkpoint_path = checkpoint_dir / f"checkpoint_{steps}.zip"
+    
+    if checkpoint_path.exists():
+        return str(checkpoint_path), steps
+    
+    # Try without .zip
+    checkpoint_path = checkpoint_dir / f"checkpoint_{steps}"
+    if Path(str(checkpoint_path) + ".zip").exists():
+        return str(checkpoint_path), steps
+        
+    return None, 0
+
+
+def cleanup_checkpoints(checkpoint_dir: Path):
+    """
+    Remove checkpoint files after successful training.
+    Keeps the directory but removes all checkpoint files and state.
+    """
+    import shutil
+    
+    if not checkpoint_dir.exists():
+        return
+    
+    print(f"\n🧹 Cleaning up checkpoints...")
+    
+    files_removed = 0
+    for item in checkpoint_dir.iterdir():
+        try:
+            if item.is_file():
+                item.unlink()
+                files_removed += 1
+            elif item.is_dir():
+                shutil.rmtree(item)
+                files_removed += 1
+        except Exception as e:
+            print(f"   Warning: Could not remove {item.name}: {e}")
+    
+    print(f"   ✅ Removed {files_removed} checkpoint file(s)")
+    print(f"   💡 Checkpoints are only kept if training fails or is interrupted")
+
+
+def extract_symbol_timeframe(data_path: str) -> tuple:
+    """Extract symbol and timeframe from data filename."""
+    basename = os.path.basename(data_path).replace('_processed', '').replace('.parquet', '').replace('.csv', '')
+    parts = basename.split('_')
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return basename, 'unknown'
+
+
+def train_trinity(
+    role: str,
+    data_path: str,
+    total_timesteps: int = 1000000,
+    resume: bool = False,
+    register: bool = True,
+    checkpoint_freq: int = 100000
+):
+    """
+    Train a Trinity agent with checkpointing and registry integration.
+    
+    Args:
+        role: Agent role (scalper/swing/trend)
+        data_path: Path to training data
+        total_timesteps: Total training steps
+        resume: Resume from checkpoint if available
+        register: Register model in registry after training
+        checkpoint_freq: Save checkpoint every N steps
+    """
+    role = role.lower()
+    symbol, timeframe = extract_symbol_timeframe(data_path)
+    
+    print(f"\n{'='*60}")
+    print(f"🚀 NEUROTRADER TRINITY TRAINING PROTOCOL")
+    print(f"{'='*60}")
+    print(f"Role      : {role.upper()}")
+    print(f"Symbol    : {symbol}")
+    print(f"Timeframe : {timeframe}")
+    print(f"Data      : {data_path}")
+    print(f"Steps     : {total_timesteps:,}")
+    print(f"{'='*60}\n")
+    
+    # Get hyperparameters
+    params = get_hyperparameters(role)
+    
+    # Load and split data
+    df = load_data(data_path)
     train_size = int(len(df) * 0.8)
     train_df = df.iloc[:train_size]
-    test_df = df.iloc[train_size:]
-    print(f"Training Samples: {len(train_df)}")
+    print(f"Training samples: {len(train_df):,}")
     
-    # 4. Create Environment
-    # We pass the 'agent_type' (role) to the environment so it picks the right reward function
+    # Create environment
     env = DummyVecEnv([lambda: TradingEnv(train_df, agent_type=role)])
     
-    # 5. Model Setup (RecurrentPPO)
-    tensorboard_log = f"./logs/trinity/{role}"
-    os.makedirs(tensorboard_log, exist_ok=True)
+    # Checkpoint directory
+    checkpoint_dir = ROOT_DIR / "models" / "checkpoints" / f"{role}_{symbol}_{timeframe}"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
-    model = RecurrentPPO(
-        "MlpLstmPolicy",
-        env,
-        verbose=1,
-        learning_rate=learning_rate,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        gamma=gamma,
-        gae_lambda=0.95,
-        ent_coef=ent_coef,
-        tensorboard_log=tensorboard_log
+    # Check for existing checkpoint
+    start_steps = 0
+    model = None
+    
+    if resume:
+        checkpoint_path, start_steps = find_checkpoint(checkpoint_dir)
+        if checkpoint_path:
+            print(f"📂 Found checkpoint at {start_steps:,} steps")
+            print(f"   Loading: {checkpoint_path}")
+            model = RecurrentPPO.load(checkpoint_path, env=env)
+            print(f"✅ Resumed from checkpoint!")
+    
+    # Create new model if not resuming
+    if model is None:
+        tensorboard_log = str(ROOT_DIR / "logs" / "trinity" / role)
+        os.makedirs(tensorboard_log, exist_ok=True)
+        
+        model = RecurrentPPO(
+            "MlpLstmPolicy",
+            env,
+            verbose=1,
+            learning_rate=params['learning_rate'],
+            n_steps=params['n_steps'],
+            batch_size=params['batch_size'],
+            gamma=params['gamma'],
+            gae_lambda=0.95,
+            ent_coef=params['ent_coef'],
+            tensorboard_log=tensorboard_log
+        )
+    
+    # Setup callbacks
+    checkpoint_callback = TrainingProgressCallback(
+        save_path=str(checkpoint_dir),
+        save_freq=checkpoint_freq
     )
     
-    # 6. Train
-    model_name = f"models/trinity_{role}_{os.path.basename(data_path).split('.')[0]}"
-    print(f"Training Model: {model_name}")
+    # Calculate remaining steps
+    remaining_steps = max(0, total_timesteps - start_steps)
+    print(f"\n🏃 Training {remaining_steps:,} steps...")
+    
+    # Final model path
+    model_name = f"trinity_{role}_{symbol}_{timeframe}"
+    final_model_path = str(ROOT_DIR / "models" / model_name)
     
     try:
-        model.learn(total_timesteps=total_timesteps, progress_bar=True)
-        model.save(model_name)
-        print(f"✅ Model saved to {model_name}")
+        model.learn(
+            total_timesteps=remaining_steps,
+            callback=checkpoint_callback,
+            progress_bar=True,
+            reset_num_timesteps=(start_steps == 0)
+        )
+        model.save(final_model_path)
+        print(f"\n✅ Training Complete!")
+        print(f"📁 Model saved to: {final_model_path}.zip")
+        
+        # Register in Model Registry
+        if register:
+            print(f"\n📋 Registering model...")
+            registry = ModelRegistry(str(ROOT_DIR / "models"))
+            
+            # Run quick evaluation for metrics
+            metrics = quick_evaluate(model, df.iloc[train_size:], role)
+            
+            metadata = registry.register_model(
+                model_path=f"{final_model_path}.zip",
+                role=role,
+                symbol=symbol,
+                timeframe=timeframe,
+                training_steps=total_timesteps,
+                training_config=params,
+                metrics=metrics,
+                data_path=data_path
+            )
+            
+            # Auto-promote if better
+            primary_metric = {
+                'scalper': 'avg_holding_time',
+                'swing': 'sharpe_ratio',
+                'trend': 'total_return'
+            }.get(role, 'total_return')
+            
+            higher_is_better = role != 'scalper'  # For scalper, lower holding time is better
+            
+            registry.auto_promote_if_better(
+                role=role,
+                new_version=metadata.version,
+                primary_metric=primary_metric,
+                higher_is_better=higher_is_better
+            )
+        
+        # Cleanup checkpoints after successful training
+        cleanup_checkpoints(checkpoint_dir)
+            
+    except KeyboardInterrupt:
+        print(f"\n⚠️ Training interrupted!")
+        print(f"   Progress saved to: {checkpoint_dir}")
+        print(f"   Resume with: --resume flag")
+        # Keep checkpoints for resume
+        
     except Exception as e:
-        print(f"❌ Training failed: {e}")
+        print(f"\n❌ Training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        # Keep checkpoints for debugging/resume
+
+
+def quick_evaluate(model, test_df: pd.DataFrame, role: str) -> dict:
+    """Quick evaluation on test set for metrics."""
+    from src.analysis.behavior import calculate_behavioral_metrics
+    
+    env = TradingEnv(test_df, agent_type=role)
+    obs, _ = env.reset()
+    done = False
+    history = []
+    lstm_states = None
+    
+    while not done:
+        action, lstm_states = model.predict(obs, state=lstm_states, deterministic=True)
+        obs, reward, done, truncated, info = env.step(action)
+        history.append({
+            'step': info['step'],
+            'equity': info['equity'],
+            'position': env.position
+        })
+        if done or truncated:
+            break
+    
+    df_res = pd.DataFrame(history)
+    
+    # Calculate metrics
+    initial = df_res['equity'].iloc[0]
+    final = df_res['equity'].iloc[-1]
+    total_return = (final - initial) / initial * 100
+    
+    peak = df_res['equity'].cummax()
+    dd = (df_res['equity'] - peak) / peak * 100
+    max_dd = dd.min()
+    
+    # Behavioral metrics
+    beh = calculate_behavioral_metrics(df_res)
+    
+    return {
+        'total_return': total_return,
+        'max_drawdown': max_dd,
+        'avg_holding_time': beh.get('avg_holding_time_steps', 0),
+        'win_rate': beh.get('win_rate_pct', 0),
+        'profit_factor': beh.get('profit_factor', 0),
+        'total_trades': beh.get('total_trades_approx', 0)
+    }
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train specific Trinity agent roles")
-    parser.add_argument('--role', type=str, required=True, choices=['scalper', 'swing', 'trend'], help="Agent role (scalper/swing/trend)")
-    parser.add_argument('--data', type=str, required=True, help="Path to training data")
-    parser.add_argument('--steps', type=int, default=1000000, help="Total timesteps")
+    parser = argparse.ArgumentParser(description="NeuroTrader Trinity Training (V2)")
+    parser.add_argument('--role', type=str, required=True, 
+                       choices=['scalper', 'swing', 'trend'],
+                       help="Agent role")
+    parser.add_argument('--data', type=str, required=True,
+                       help="Path to training data")
+    parser.add_argument('--steps', type=int, default=1000000,
+                       help="Total timesteps")
+    parser.add_argument('--resume', action='store_true',
+                       help="Resume from checkpoint")
+    parser.add_argument('--no-register', action='store_true',
+                       help="Skip model registry")
+    parser.add_argument('--checkpoint-freq', type=int, default=100000,
+                       help="Checkpoint frequency (steps)")
     
     args = parser.parse_args()
     
     if args.role == 'scalper' and 'M5' not in args.data and 'M1' not in args.data:
         print("⚠️ WARNING: Scalpers should preferably trade on M1/M5 data.")
-        
-    train_trinity(args.role, args.data, args.steps)
+    
+    train_trinity(
+        role=args.role,
+        data_path=args.data,
+        total_timesteps=args.steps,
+        resume=args.resume,
+        register=not args.no_register,
+        checkpoint_freq=args.checkpoint_freq
+    )

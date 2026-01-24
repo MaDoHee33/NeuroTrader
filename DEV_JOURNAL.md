@@ -262,3 +262,54 @@ Compare V1 vs V2 on the same "Blind Test" (XAUUSD D1):
 **Actions:**
 -   Created `docs/RL_ALGORITHMS_TH.md`: A comprehensive guide comparing PPO, A2C, DDPG, SAC, and Ensemble methods in Thai.
 -   Updated `README.md`: Reflected V3 Architecture (Trinity + Skills + Optuna).
+
+---
+
+### 13. System Status: PAUSED (User Request)
+**Date:** 2026-01-23
+**State:**
+-   **Context:** V3 Upgrade is complete (Code, Docs, Git).
+-   **Active Task:** Retraining Scalper V2 with Optuna Optimized parameters.
+-   **Interruption:** Training stopped at ~40% progress.
+
+**Next Action Items:**
+1.  **Resume Training:** Run `python scripts/train_trinity.py --role scalper ...` again.
+2.  **Verify:** Check if the new Scalper holds positions shorter than 1 hour.
+3.  **Deploy:** If verified, move to Live/Paper Trading.
+
+---
+
+### 14. V4 AutoPilot System
+**Date:** 2026-01-24
+**Goal:** Create fully automated training pipeline with model versioning.
+
+**New Components:**
+| File | Purpose |
+|------|---------|
+| `src/skills/model_registry.py` | Versioned model storage with auto-promotion |
+| `src/skills/auto_evaluator.py` | Automatic post-training evaluation |
+| `src/skills/training_orchestrator.py` | Config-driven training controller |
+| `src/skills/notifier.py` | Telegram/Discord notifications |
+| `config/training_config.yaml` | Declarative pipeline configuration |
+| `scripts/autopilot.py` | Unified CLI for all operations |
+
+**Upgrades to `train_trinity.py`:**
+-   ✅ Checkpoint saving every 100k steps
+-   ✅ Resume from checkpoint (`--resume` flag)
+-   ✅ Auto-register in Model Registry
+-   ✅ Auto-promote if better than previous best
+-   ✅ Cleanup checkpoints after successful training
+
+**New CLI Commands:**
+```powershell
+python scripts/autopilot.py train --all      # Train all roles
+python scripts/autopilot.py resume           # Resume interrupted
+python scripts/autopilot.py status           # Show model status
+python scripts/autopilot.py compare --role X # Compare versions
+```
+
+**Documentation:**
+-   Created `docs/ARCHITECTURE.md`: Complete system documentation in Thai
+
+**Status:** Scalper training in progress (~43%)
+

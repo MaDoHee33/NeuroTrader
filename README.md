@@ -1,11 +1,12 @@
-# 🧠 NeuroTrader V3 (The Trinity System)
-**Advanced Agentic Trading System with Behavioral Analysis & Autonomous Skills**
+# 🧠 NeuroTrader V4 (AutoPilot Edition)
+**Advanced Agentic Trading System with Automated Training Pipeline**
 
-NeuroTrader V3 evolves beyond a single model into a **Multi-Agent Trinity System**, capable of adapting to different market phases (Scalping, Swinging, Trending). It is augmented with **Autonomous Skills** (News Watching, Reporting) and **Hyperparameter Tuning**.
+NeuroTrader V4 evolves into a fully **Automated Training System** with Model Versioning, Auto-Evaluation, and Config-Driven Pipelines.
 
 ---
 
 ## 🏗️ Architecture: The Trinity System
+
 We deploy 3 specialized agents, each with unique reward functions and data horizons:
 
 | Agent Role | Timeframe | Strategy | Reward Logic |
@@ -16,50 +17,80 @@ We deploy 3 specialized agents, each with unique reward functions and data horiz
 
 ---
 
-## ⚡ Key Features (V3)
-### 1. Autonomous Skills (`src/skills/`)
--   **📰 News Watcher**: Automatically connects to Economic Calendars to detect high-impact events (e.g., FOMC, Non-Farm). **Blocks trades** 30 mins before critical news.
--   **📝 Auto Reporter**: Generates professional **Markdown/PDF Reports** after every backtest, analyzing Win Rate, Holding Time, and Market Exposure.
+## ⚡ Key Features (V4)
 
-### 2. Hyperparameter Tuning (`scripts/tune_trinity.py`)
--   Powered by **Optuna**.
--   Optimizes `Gamma`, `Learning Rate`, and `Batch Size` to find the perfect balance between Profit and Behavior.
--   Includes **Behavioral Penalties** in the objective function (e.g., punishing a Scalper for holding > 1 hour).
+### 1. AutoPilot Training System (`src/skills/`)
+-   **🗂️ Model Registry**: Versioned model storage with auto-promotion
+-   **📊 Auto-Evaluator**: Automatic post-training evaluation and comparison
+-   **🎛️ Training Orchestrator**: Config-driven training with auto-resume
+-   **🔔 Notifier**: Telegram/Discord alerts for training events
 
-### 3. Developer Experience (`.cursor/mcp.json`)
--   Integrated **Context7 MCP Server**: Allows the AI Developer to fetch up-to-date documentation for libraries (Pandas, TA-Lib) in real-time.
+### 2. Autonomous Skills
+-   **📰 News Watcher**: Blocks trades 30 mins before high-impact news
+-   **📝 Auto Reporter**: Generates Markdown/PDF performance reports
+
+### 3. Hyperparameter Tuning (`scripts/tune_trinity.py`)
+-   Powered by **Optuna**
+-   Includes **Behavioral Penalties** (e.g., punishing Scalper for holding > 1 hour)
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Train the Trinity (Batch)
-Train all models sequentially:
+### Using AutoPilot CLI (Recommended)
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/train_trinity_full.ps1
-```
-*Individual training:* `python scripts/train_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet`
+# Train all roles with auto-resume
+python scripts/autopilot.py train --all
 
-### 2. Hyperparameter Tuning (Optimize Behavior)
-Fix "Buy & Hold" behavior for Scalpers:
-```bash
-python scripts/tune_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --trials 50
+# Quick train single role
+python scripts/autopilot.py quick --role scalper
+
+# Resume interrupted training
+python scripts/autopilot.py resume
+
+# Show model status
+python scripts/autopilot.py status
+
+# Compare model versions
+python scripts/autopilot.py compare --role scalper
 ```
 
-### 3. Verification & Reporting
-Run backtests with auto-reporting:
-```bash
-python scripts/backtest_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --model models/trinity_scalper_best.zip
+### Direct Scripts
+```powershell
+# Train with checkpoints
+python scripts/train_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --resume
+
+# Hyperparameter tuning
+python scripts/tune_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --trials 20
+
+# Backtest with reporting
+python scripts/backtest_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --model models/scalper/best/model.zip
 ```
-*Reports saved to `reports/`*
 
 ---
 
 ## 📁 Project Structure
--   `src/brain/`: Core RL Agents (PPO/LSTM) & Reward Functions
--   `src/skills/`: Autonomous Capabilities (News, Report)
--   `scripts/`: Automation Scripts (Train, Backtest, Tune)
--   `data/`: Processed Parquet Data
+```
+NeuroTrader/
+├── src/
+│   ├── brain/          # RL Agents, Environment, Features
+│   ├── body/           # MT5 Driver
+│   ├── skills/         # AutoPilot Components
+│   └── utils/          # Utilities
+├── scripts/            # CLI Scripts
+├── config/             # YAML Configurations
+├── models/             # Trained Models (Versioned)
+├── data/               # Processed Data
+└── docs/               # Documentation
+```
 
 ---
-**Status:** ✅ V3 Upgrade Complete (Jan 2026) | **OS:** Windows Native
+
+## 📚 Documentation
+-   [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Complete system documentation (Thai)
+-   [RL_ALGORITHMS_TH.md](docs/RL_ALGORITHMS_TH.md) - RL algorithms comparison (Thai)
+-   [DEV_JOURNAL.md](DEV_JOURNAL.md) - Development history
+
+---
+
+**Status:** ✅ V4 AutoPilot Complete (Jan 2026) | **OS:** Windows Native
