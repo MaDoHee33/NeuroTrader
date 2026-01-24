@@ -153,6 +153,44 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
         df['stoch_k'] = 0.5
         df['stoch_d'] = 0.5
 
+    # --- 8.5 Exit Signal Features (Phase 1 - Scalper Improvement) ---
+    # Features to help model learn when to EXIT positions
+    
+    # RSI Extreme Levels (Overbought/Oversold signals)
+    df['rsi_overbought'] = (df['rsi'] > 0.70).astype(float)  # RSI > 70%
+    df['rsi_oversold'] = (df['rsi'] < 0.30).astype(float)    # RSI < 30%
+    df['rsi_extreme'] = df['rsi_overbought'] + df['rsi_oversold']  # Any extreme
+    
+    # MACD Crossover Signals (Momentum shift)
+    df['macd_cross_up'] = ((df['macd_diff'] > 0) & (df['macd_diff'].shift(1) <= 0)).astype(float)
+    df['macd_cross_down'] = ((df['macd_diff'] < 0) & (df['macd_diff'].shift(1) >= 0)).astype(float)
+    df['macd_weakening'] = (df['macd_diff'].abs() < df['macd_diff'].shift(1).abs()).astype(float)
+    
+    # Price Extension (How far price moved from recent mean)
+    df['price_extension'] = (df['close'] - df['close'].rolling(20).mean()) / df['atr']
+    df['price_extension'] = df['price_extension'].fillna(0)
+    df['price_overextended'] = (df['price_extension'].abs() > 2.0).astype(float)  # > 2 ATR from mean
+    
+    # Bollinger Band Position (0 = at lower band, 1 = at upper band)
+    bb_range = df['bb_high'] - df['bb_low']
+    df['bb_position'] = (df['close'] - df['bb_low']) / bb_range.replace(0, np.nan)
+    df['bb_position'] = df['bb_position'].fillna(0.5)
+    df['at_bb_upper'] = (df['bb_position'] > 0.95).astype(float)
+    df['at_bb_lower'] = (df['bb_position'] < 0.05).astype(float)
+    
+    # Stochastic Extreme
+    df['stoch_overbought'] = (df['stoch_k'] > 0.80).astype(float)
+    df['stoch_oversold'] = (df['stoch_k'] < 0.20).astype(float)
+    
+    # Combined Exit Signal Score (higher = more reason to exit)
+    df['exit_signal_score'] = (
+        df['rsi_extreme'] +
+        df['macd_weakening'] +
+        df['price_overextended'] +
+        df['at_bb_upper'] + df['at_bb_lower'] +
+        df['stoch_overbought'] + df['stoch_oversold']
+    ) / 7.0  # Normalize to 0-1
+
     df = df.dropna()
     
 

@@ -50,14 +50,26 @@ class TradingEnv(gym.Env):
         if feature_cols is not None:
             self.feature_cols = feature_cols
         else:
-            # Default Long-Term features (V2)
+            # Default features with Exit Signals (V4 - Phase 1)
             self.feature_cols = [
+                # Price Action
                 'body_size', 'upper_wick', 'lower_wick', 'is_bullish',
+                # Trend
                 'ema_50', 'dist_ema_50', 'dist_ema_200',
+                # Momentum
                 'rsi', 'atr_norm',
+                # Structure
                 'dist_to_high', 'dist_to_low',
+                # Returns
                 'log_ret', 'log_ret_lag_1', 'log_ret_lag_2',
-                'hour_sin', 'hour_cos', 'day_sin', 'day_cos'
+                # Time
+                'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
+                # EXIT SIGNALS (Phase 1 - Scalper Improvement)
+                'exit_signal_score',        # Combined exit signal (0-1)
+                'rsi_extreme',              # RSI at overbought/oversold
+                'macd_weakening',           # Momentum fading
+                'price_overextended',       # Price too far from mean
+                'bb_position',              # Position within Bollinger Bands
             ]
         
         # Check cols on first asset

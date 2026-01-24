@@ -311,5 +311,31 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Documentation:**
 -   Created `docs/ARCHITECTURE.md`: Complete system documentation in Thai
 
-**Status:** Scalper training in progress (~43%)
+**Status:** ✅ V4 AutoPilot Complete
 
+---
+
+### 15. Phase 1: Exit Signal Features
+**Date:** 2026-01-24
+**Goal:** Fix Buy & Hold behavior in Scalper by adding exit signal features.
+
+**Baseline Results (Before):**
+| Metric | Value | Status |
+|--------|-------|--------|
+| Return | +6.71% | ✅ |
+| Max DD | -2.99% | ✅ |
+| Avg Holding | 9,761 steps | ❌ Buy & Hold |
+| Trades | 1 | ❌ |
+
+**New Features Added to `feature_eng.py`:**
+-   `exit_signal_score` - Combined exit signal (0-1)
+-   `rsi_extreme`, `rsi_overbought`, `rsi_oversold`
+-   `macd_cross_up`, `macd_cross_down`, `macd_weakening`
+-   `price_extension`, `price_overextended`
+-   `bb_position`, `at_bb_upper`, `at_bb_lower`
+-   `stoch_overbought`, `stoch_oversold`
+
+**Updated `TradingEnv`:**
+-   Added 5 exit signal features to default observation space (23 → 28 features)
+
+**Status:** Training Scalper v2 with Exit Signals (500k steps)
