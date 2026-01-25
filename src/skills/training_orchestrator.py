@@ -82,7 +82,7 @@ class TrainingOrchestrator:
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file."""
         if not self.config_path.exists():
-            print(f"⚠️ Config not found: {self.config_path}")
+            print(f"[WARNING] Config not found: {self.config_path}")
             return self._default_config()
         
         with open(self.config_path, 'r') as f:
@@ -134,7 +134,7 @@ class TrainingOrchestrator:
                 data_path = self._build_data_path(symbol, tf)
                 
                 if not Path(data_path).exists():
-                    print(f"⚠️ Data not found: {data_path}")
+                    print(f"[WARNING] Data not found: {data_path}")
                     continue
                 
                 job = TrainingJob(
@@ -164,18 +164,18 @@ class TrainingOrchestrator:
             True if all jobs completed successfully
         """
         print(f"\n{'='*60}")
-        print(f"🎯 TRAINING ORCHESTRATOR: {role.upper()}")
+        print(f"[TARGET] TRAINING ORCHESTRATOR: {role.upper()}")
         print(f"{'='*60}")
         
         jobs = self._create_jobs_for_role(role)
         
         if not jobs:
-            print(f"❌ No valid jobs found for {role}")
+            print(f"[FAILED] No valid jobs found for {role}")
             return False
         
-        print(f"📋 Created {len(jobs)} training job(s)")
+        print(f"[INFO] Created {len(jobs)} training job(s)")
         for job in jobs:
-            print(f"   • {job.job_id}")
+            print(f"   * {job.job_id}")
         
         all_success = True
         
@@ -198,7 +198,7 @@ class TrainingOrchestrator:
         roles = list(self.config.get('roles', {}).keys())
         
         print(f"\n{'='*60}")
-        print(f"🚀 FULL TRAINING PIPELINE")
+        print(f"[START] FULL TRAINING PIPELINE")
         print(f"{'='*60}")
         print(f"Roles to train: {', '.join(r.upper() for r in roles)}")
         
@@ -212,9 +212,9 @@ class TrainingOrchestrator:
     
     def _execute_job(self, job: TrainingJob, resume: bool = True) -> bool:
         """Execute a single training job."""
-        print(f"\n{'─'*40}")
-        print(f"▶ Starting: {job.job_id}")
-        print(f"{'─'*40}")
+        print(f"\n{'-'*40}")
+        print(f"[START] Starting: {job.job_id}")
+        print(f"{'-'*40}")
         
         # Send notification
         self.notifier.training_started(
@@ -238,15 +238,15 @@ class TrainingOrchestrator:
                 checkpoint_freq=job.checkpoint_freq
             )
             
-            print(f"✅ Job completed: {job.job_id}")
+            print(f"[SUCCESS] Job completed: {job.job_id}")
             return True
             
         except KeyboardInterrupt:
-            print(f"\n⚠️ Job interrupted: {job.job_id}")
+            print(f"[WARNING] Job interrupted: {job.job_id}")
             return False
             
         except Exception as e:
-            print(f"❌ Job failed: {job.job_id}")
+            print(f"[FAILED] Job failed: {job.job_id}")
             print(f"   Error: {e}")
             
             self.notifier.training_failed(
@@ -259,7 +259,7 @@ class TrainingOrchestrator:
     
     def resume(self) -> bool:
         """Resume any interrupted training jobs."""
-        print("\n🔄 Checking for interrupted jobs...")
+        print("\n[CHECK] Checking for interrupted jobs...")
         
         checkpoints_dir = ROOT_DIR / self.config.get('output', {}).get('checkpoints_dir', 'models/checkpoints')
         
@@ -292,9 +292,9 @@ class TrainingOrchestrator:
             print("   No interrupted jobs found")
             return True
         
-        print(f"📋 Found {len(found_jobs)} interrupted job(s):")
+        print(f"[INFO] Found {len(found_jobs)} interrupted job(s):")
         for job in found_jobs:
-            print(f"   • {job['role']}_{job['symbol']}_{job['timeframe']} ({job['steps']:,} steps)")
+            print(f"   * {job['role']}_{job['symbol']}_{job['timeframe']} ({job['steps']:,} steps)")
         
         # Resume each job
         for job in found_jobs:
@@ -324,16 +324,16 @@ class TrainingOrchestrator:
     def _print_summary(self):
         """Print training summary."""
         print(f"\n{'='*60}")
-        print("📊 TRAINING SUMMARY")
+        print("[INFO] TRAINING SUMMARY")
         print(f"{'='*60}")
-        print(f"✅ Completed: {len(self.completed_jobs)}")
+        print(f"[SUCCESS] Completed: {len(self.completed_jobs)}")
         for job_id in self.completed_jobs:
-            print(f"   • {job_id}")
+            print(f"   * {job_id}")
         
         if self.failed_jobs:
-            print(f"❌ Failed: {len(self.failed_jobs)}")
+            print(f"[FAILED] Failed: {len(self.failed_jobs)}")
             for job_id in self.failed_jobs:
-                print(f"   • {job_id}")
+                print(f"   * {job_id}")
         
         print(f"{'='*60}")
 

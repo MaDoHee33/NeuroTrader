@@ -25,7 +25,7 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3 import PPO
 
 from src.brain.env.trading_env import TradingEnv
-from src.brain.feature_eng import add_features
+from src.brain.features import add_features
 from src.analysis.behavior import calculate_behavioral_metrics, generate_text_report
 from src.skills.model_registry import ModelRegistry
 

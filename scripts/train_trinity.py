@@ -24,7 +24,7 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from src.brain.env.trading_env import TradingEnv
-from src.brain.feature_eng import add_features
+from src.brain.features import add_features
 from src.skills.model_registry import ModelRegistry
 
 
@@ -52,7 +52,7 @@ class TrainingProgressCallback(BaseCallback):
                 json.dump(state, f)
                 
             if self.verbose:
-                print(f"\n💾 Checkpoint saved: {checkpoint_path} ({self.n_calls:,} steps)")
+                print(f"\n[CHECKPOINT] Checkpoint saved: {checkpoint_path} ({self.n_calls:,} steps)")
         return True
 
 
@@ -124,12 +124,12 @@ def get_hyperparameters(role: str) -> dict:
     # Check for Optuna-optimized params
     param_file = ROOT_DIR / f"best_params_{role}.json"
     if param_file.exists():
-        print(f"✨ Loading Optimized Hyperparameters from {param_file}")
+        print(f"[INFO] Loading Optimized Hyperparameters from {param_file}")
         import json
         with open(param_file, 'r') as f:
             optimized = json.load(f)
             params.update(optimized)
-            print(f"   → Gamma: {params['gamma']:.4f}, LR: {params['learning_rate']:.6f}")
+            print(f"   -> Gamma: {params['gamma']:.4f}, LR: {params['learning_rate']:.6f}")
     
     return params
 
@@ -171,7 +171,7 @@ def cleanup_checkpoints(checkpoint_dir: Path):
     if not checkpoint_dir.exists():
         return
     
-    print(f"\n🧹 Cleaning up checkpoints...")
+    print(f"\n[CLEANUP] Cleaning up checkpoints...")
     
     files_removed = 0
     for item in checkpoint_dir.iterdir():
@@ -185,8 +185,8 @@ def cleanup_checkpoints(checkpoint_dir: Path):
         except Exception as e:
             print(f"   Warning: Could not remove {item.name}: {e}")
     
-    print(f"   ✅ Removed {files_removed} checkpoint file(s)")
-    print(f"   💡 Checkpoints are only kept if training fails or is interrupted")
+    print(f"   [SUCCESS] Removed {files_removed} checkpoint file(s)")
+    print(f"   [INFO] Checkpoints are only kept if training fails or is interrupted")
 
 
 def extract_symbol_timeframe(data_path: str) -> tuple:
@@ -225,7 +225,7 @@ def train_trinity(
     symbol, timeframe = extract_symbol_timeframe(data_path)
     
     print(f"\n{'='*60}")
-    print(f"🚀 NEUROTRADER TRINITY TRAINING PROTOCOL")
+    print(f"[START] NEUROTRADER TRINITY TRAINING PROTOCOL")
     print(f"{'='*60}")
     print(f"Role      : {role.upper()}")
     print(f"Symbol    : {symbol}")
@@ -247,7 +247,7 @@ def train_trinity(
     env_kwargs = {'agent_type': role}
     if reward_config:
         env_kwargs['reward_config'] = reward_config
-        print(f"🔧 Using Custom Reward Config: {reward_config}")
+        print(f"[CONFIG] Using Custom Reward Config: {reward_config}")
         
     env = DummyVecEnv([lambda: TradingEnv(train_df, **env_kwargs)])
     
@@ -255,7 +255,7 @@ def train_trinity(
     model_name_base = f"{role}_{symbol}_{timeframe}"
     if suffix:
         model_name_base += f"_{suffix}"
-        print(f"🏷️  Using Model Suffix: {suffix}")
+        print(f"[INFO]  Using Model Suffix: {suffix}")
     
     checkpoint_dir = ROOT_DIR / "models" / "checkpoints" / model_name_base
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -267,10 +267,10 @@ def train_trinity(
     if resume:
         checkpoint_path, start_steps = find_checkpoint(checkpoint_dir)
         if checkpoint_path:
-            print(f"📂 Found checkpoint at {start_steps:,} steps")
+            print(f"[INFO] Found checkpoint at {start_steps:,} steps")
             print(f"   Loading: {checkpoint_path}")
             model = RecurrentPPO.load(checkpoint_path, env=env)
-            print(f"✅ Resumed from checkpoint!")
+            print(f"[SUCCESS] Resumed from checkpoint!")
     
     # Create new model if not resuming
     if model is None:
@@ -298,7 +298,7 @@ def train_trinity(
     
     # Calculate remaining steps
     remaining_steps = max(0, total_timesteps - start_steps)
-    print(f"\n🏃 Training {remaining_steps:,} steps...")
+    print(f"\n[RUNNING] Training {remaining_steps:,} steps...")
     
     # Final model path
     model_name = f"trinity_{role}_{symbol}_{timeframe}"
@@ -312,12 +312,12 @@ def train_trinity(
             reset_num_timesteps=(start_steps == 0)
         )
         model.save(final_model_path)
-        print(f"\n✅ Training Complete!")
-        print(f"📁 Model saved to: {final_model_path}.zip")
+        print(f"\n[SUCCESS] Training Complete!")
+        print(f"[FILE] Model saved to: {final_model_path}.zip")
         
         # Register in Model Registry
         if register:
-            print(f"\n📋 Registering model...")
+            print(f"\n[INFO] Registering model...")
             registry = ModelRegistry(str(ROOT_DIR / "models"))
             
             # Run quick evaluation for metrics (with custom config)
@@ -356,13 +356,13 @@ def train_trinity(
         cleanup_checkpoints(checkpoint_dir)
             
     except KeyboardInterrupt:
-        print(f"\n⚠️ Training interrupted!")
+        print(f"\n[WARNING] Training interrupted!")
         print(f"   Progress saved to: {checkpoint_dir}")
         print(f"   Resume with: --resume flag")
         # Keep checkpoints for resume
         
     except Exception as e:
-        print(f"\n❌ Training failed: {e}")
+        print(f"\n[FAILED] Training failed: {e}")
         import traceback
         traceback.print_exc()
         # Keep checkpoints for debugging/resume
@@ -461,13 +461,6 @@ if __name__ == "__main__":
     )
     
     if args.role == 'scalper' and 'M5' not in args.data and 'M1' not in args.data:
-        print("⚠️ WARNING: Scalpers should preferably trade on M1/M5 data.")
+        print("[WARNING] WARNING: Scalpers should preferably trade on M1/M5 data.")
     
-    train_trinity(
-        role=args.role,
-        data_path=args.data,
-        total_timesteps=args.steps,
-        resume=args.resume,
-        register=not args.no_register,
-        checkpoint_freq=args.checkpoint_freq
-    )
+

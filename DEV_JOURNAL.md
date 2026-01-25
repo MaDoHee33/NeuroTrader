@@ -420,3 +420,42 @@ python scripts/autopilot.py compare --role X # Compare versions
     - Created `scripts/add_sentiment_to_processed.py`: Running batch job to enrich all datasets.
 
 **Status**: Training and Data Enrichment processes running in background.
+
+---
+
+### 21. Quick Test of Balanced Model (400k Checkpoint)
+**Date:** 2026-01-25 (Current)
+**Context:** User requested test of latest model.
+**Findings:**
+- The "Balanced" experiment reached 400,000 steps (found in `models/checkpoints`) but seems to have restarted (current state 100k).
+- Tested `checkpoint_400000.zip` on Test Set (20% Out-of-Sample).
+
+**Results:**
+- **Return:** **-0.92%** (Loss)
+- **Max Drawdown:** -1.45%
+- **Observation:** The Balanced model (at 400k steps) performs similarly to the Aggressive model (Loss). It has not yet solved the profitability problem.
+
+**Next Steps:**
+- Allow the current restarted training to complete.
+- Analyze behavioral metrics (Avg Holding Time) to see if it's churning or holding.
+
+---
+
+### 22. System Reset & Fresh Training (Scalper AutoPilot)
+**Date:** 2026-01-25 (Current)
+**Context:** User requested full cleanup and restart using the new AutoPilot system.
+**Actions:**
+- **Cleanup:** Deleted `models/checkpoints/*`, `models/*.zip`, and legacy role directories.
+- **Fixes:** Resolved Unicode issues in `scripts/autopilot.py`, `src/skills/training_orchestrator.py`, and `scripts/train_trinity.py`.
+- **Launch:** Started fresh training for **Scalper (XAUUSD M5)**.
+    - Command: `python scripts/autopilot.py train --role scalper --fresh`
+    - Steps: 1,000,000
+
+**Current Status:**
+- Training is **RUNNING**.
+- Initial FPS: ~170.
+- Observation: Early episodes hitting Circuit Breaker (20% Drawdown). This is normal for a fresh (random) model learning from scratch.
+
+**Next Steps:**
+- Monitor training progress.
+- Wait for first checkpoint (100k steps).
