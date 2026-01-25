@@ -78,6 +78,13 @@ class TradingEnv(gym.Env):
                 'price_overextended',       # Price too far from mean
                 'bb_position',              # Position within Bollinger Bands
             ]
+            
+            # Auto-detect Sentiment Features (Phase 2)
+            sentiment_features = ['fear_greed_value', 'vix', 'us10y', 'dxy']
+            present_sentiment = [f for f in sentiment_features if f in self.df.columns]
+            if present_sentiment:
+                self.feature_cols.extend(present_sentiment)
+                # print(f"✨ Sentiment Features Detected & Enabled: {present_sentiment}")
         
         # Check cols on first asset
         missing_cols = [c for c in self.feature_cols if c not in self.df.columns]

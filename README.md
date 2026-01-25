@@ -93,4 +93,16 @@ NeuroTrader/
 
 ---
 
-**Status:** ✅ V4 AutoPilot Complete (Jan 2026) | **OS:** Windows Native
+**Status:** ✅ V5 Optimization Complete (Jan 2026) | **OS:** Windows Native
+
+## ⚡ V5 Optimization (New!)
+In consultation with Cloud AI, we have refactored the system for performance:
+1.  **Fast Trainer (`src/brain/experimental/train_fast.py`)**: Parallel environment training (4-8x faster).
+2.  **Unified Config (`config/hyperparameters.yaml`)**: Centralized settings for easy experimentation.
+3.  **Robust Features (`src/brain/features.py`)**: Consolidated feature engineering with better NaN handling.
+
+### How to Run Fast Trainer
+```powershell
+# Run optimized parallel training
+python src/brain/experimental/train_fast.py
+```

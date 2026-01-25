@@ -405,3 +405,18 @@ python scripts/autopilot.py compare --role X # Compare versions
 
 
 **Status:** Training Scalper v2 with Exit Signals (500k steps)
+
+---
+
+### 20. Resume & Sentiment Data Engineering
+**Date:** 2026-01-25
+**Objective**: Resume Scalper experiments and prepare Sentiment Data.
+
+**Actions**:
+- **Fixed Environment**: Resolved `pandas/scipy` missing dependencies and `UnicodeEncodeError`.
+- **Resumed Training**: 'Balanced' Scalper Experiment (Step 28k/500k Running).
+- **Sentiment Integration**:
+    - Created `src/skills/historical_sentiment.py`: Fetches 8 years of Fear & Greed, VIX, DXY.
+    - Created `scripts/add_sentiment_to_processed.py`: Running batch job to enrich all datasets.
+
+**Status**: Training and Data Enrichment processes running in background.

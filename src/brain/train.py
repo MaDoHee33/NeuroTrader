@@ -67,8 +67,9 @@ WORKSPACE = setup_colab() if is_colab() else str(Path(__file__).resolve().parent
 
 # Import after path setup
 from src.brain.env.trading_env import TradingEnv
-from src.brain.feature_eng import add_features
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from src.brain.features import add_features
+from src.utils.config_loader import config
+# from src.brain.feature_eng import add_features # DEPRECATED
 from nautilus_trader.model.data import BarType
 
 def get_paths(workspace, args):
