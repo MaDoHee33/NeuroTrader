@@ -15,7 +15,7 @@ sys.path.append(str(ROOT_DIR))
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO 
 from src.brain.env.trading_env import TradingEnv
-from src.brain.feature_eng import add_features
+from src.brain.features import add_features
 from src.analysis.behavior import calculate_behavioral_metrics, generate_text_report
 from src.skills.reporter import TraderReporter
 
@@ -28,7 +28,7 @@ def main():
     args = parser.parse_args()
     
     # Paths
-    print(f"\n🚀 TRINITY BACKTEST SYSTEM")
+    print(f"\nTRINITY BACKTEST SYSTEM")
     print(f"Role: {args.role.upper()}")
     print(f"Model: {args.model}")
     print(f"Data: {args.data}")
@@ -116,7 +116,7 @@ def main():
     max_dd = dd.min()
     
     print("\n" + "="*30)
-    print("💰 FINANCIAL PERFORMANCE")
+    print("FINANCIAL PERFORMANCE")
     print(f"Return: {ret_pct:.2f}%")
     print(f"Max DD: {max_dd:.2f}%")
     print("="*30)
@@ -138,8 +138,8 @@ def main():
     reporter = TraderReporter(report_dir='reports')
     report_path = reporter.generate_report(df_res, model_name=os.path.basename(args.model), role=args.role)
         
-    print(f"📝 Report saved to: {report_path}")
-    print(f"💾 Data saved to: {csv_name}")
+    print(f"Report saved to: {report_path}")
+    print(f"Data saved to: {csv_name}")
 
 if __name__ == "__main__":
     main()

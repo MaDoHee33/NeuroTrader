@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 from collections import deque
 from src.brain.risk_manager import RiskManager
+from src.brain.features import FeatureRegistry
 
 class TradingEnv(gym.Env):
     """
@@ -53,43 +54,22 @@ class TradingEnv(gym.Env):
         # Action Space: 0=HOLD, 1=BUY, 2=SELL
         self.action_space = spaces.Discrete(3)
         
-        # Updated Hybrid Features
-        if feature_cols is not None:
-            self.feature_cols = feature_cols
-        else:
-            # Default features with Exit Signals (V4 - Phase 1)
-            self.feature_cols = [
-                # Price Action
-                'body_size', 'upper_wick', 'lower_wick', 'is_bullish',
-                # Trend
-                'ema_50', 'dist_ema_50', 'dist_ema_200',
-                # Momentum
-                'rsi', 'atr_norm',
-                # Structure
-                'dist_to_high', 'dist_to_low',
-                # Returns
-                'log_ret', 'log_ret_lag_1', 'log_ret_lag_2',
-                # Time
-                'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-                # EXIT SIGNALS (Phase 1 - Scalper Improvement)
-                'exit_signal_score',        # Combined exit signal (0-1)
-                'rsi_extreme',              # RSI at overbought/oversold
-                'macd_weakening',           # Momentum fading
-                'price_overextended',       # Price too far from mean
-                'bb_position',              # Position within Bollinger Bands
-            ]
-            
-            # Auto-detect Sentiment Features (Phase 2)
-            sentiment_features = ['fear_greed_value', 'vix', 'us10y', 'dxy']
-            present_sentiment = [f for f in sentiment_features if f in self.df.columns]
-            if present_sentiment:
-                self.feature_cols.extend(present_sentiment)
-                # print(f"✨ Sentiment Features Detected & Enabled: {present_sentiment}")
+        # Unified Feature Engine
+        self.registry = FeatureRegistry()
+        self.feature_cols = self.registry.feature_names
         
-        # Check cols on first asset
-        missing_cols = [c for c in self.feature_cols if c not in self.df.columns]
-        if missing_cols:
-            raise ValueError(f"Dataframe missing required columns: {missing_cols}")
+        # Precompute features for the whole dataframe (Batch Mode)
+        # We assume self.df contains raw OHLCV
+        # We need to ensure self.df has the features.
+        # Since compute_batch returns ONLY features, we can keep them separate or merge.
+        # Merging is safer for index alignment.
+        self.features_df = self.registry.compute_batch(self.df)
+        
+        # Validate length
+        if len(self.features_df) != len(self.df):
+             # This happens if compute_batch trims (e.g. cold start). 
+             # But our new compute_batch returns same index!
+             pass
 
         num_features = len(self.feature_cols) + 3 # +3 for balance, position, and steps_in_position
         self.observation_space = spaces.Box(
@@ -131,17 +111,16 @@ class TradingEnv(gym.Env):
         self.risk_manager.reset_daily_metrics(self.balance)
         self.risk_manager.update_metrics(self.equity, self.df.index[self.current_step] if isinstance(self.df.index[0], (pd.Timestamp, datetime)) else None)
         
-        print(f"🔄 Reset [{self.current_asset_name}]: Balance=${self.balance:.2f}")
+        print(f"[RESET] [{self.current_asset_name}]: Balance=${self.balance:.2f}")
         
         return self._get_observation(), {}
     
     def _get_observation(self):
-        # Get current row
-        row = self.df.iloc[self.current_step]
+        # Get feature row
+        # We index into precomputed features
+        feat_row = self.features_df.iloc[self.current_step]
         
-        obs = [
-            row[col] for col in self.feature_cols
-        ]
+        obs = feat_row.values.tolist()
         # Add account state
         obs.append(self.balance)
         obs.append(self.position)

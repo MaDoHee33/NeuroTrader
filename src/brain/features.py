@@ -1,126 +1,188 @@
+
 import pandas as pd
 import numpy as np
+from collections import deque
+from typing import List, Dict, Union
 from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import VolumeWeightedAveragePrice
 
-from src.utils.config_loader import config
+class UnifiedFeatureEngine:
+    """
+    Stateful feature engine ensuring 100% parity between Batch (Training) and Stream (Inference).
+    """
+    
+    # EXACT definition of the Observation Space
+    FEATURE_NAMES = [
+        'rsi', 'macd', 'macd_signal', 'bb_width', 'bb_position',
+        'ema_20_dist', 'ema_50_dist', 'atr_norm', 
+        'stoch_k', 'stoch_d', 'log_ret',
+        'vwap_dist', 'normalized_volume',
+        'body_size_norm', 'is_bullish',
+        'hour_sin', 'hour_cos', 'day_sin', 'day_cos'
+    ]
 
-class FeatureEngine:
-    """
-    Centralized Feature Engineering Class.
-    Handles calculation, normalization, and validation of technical indicators.
-    """
-    def __init__(self):
-        self.history_size = config.get("environment.history_size", 60)
-        self.required_cols = ['open', 'high', 'low', 'close', 'volume']
+    def __init__(self, history_size: int = 200):
+        self.history_size = history_size
+        self.history = deque(maxlen=history_size)
         
-    def validate(self, df: pd.DataFrame) -> bool:
-        """Check if DataFrame has necessary columns"""
-        return all(col in df.columns for col in self.required_cols)
+    def get_output_dim(self) -> int:
+        return len(self.FEATURE_NAMES)
 
-    def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def compute_batch(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Main entry point. Adds indicators to the DataFrame.
+        Compute features for a full DataFrame (Training Mode).
+        Returns DataFrame with ONLY the feature columns.
         """
         if df.empty:
-            return df
+            return pd.DataFrame(columns=self.FEATURE_NAMES)
             
+        # Avoid crashes on very small data (Cold Start)
+        if len(df) < 20: 
+            # Not enough data for indicators (window=14 or 20)
+            # Return zeros but with correct columns/index
+            z = pd.DataFrame(0.0, index=df.index, columns=self.FEATURE_NAMES)
+            # Fill basic columns that don't need history if possible?
+            # For consistency, it's safer to return 0 until warmed up
+            # But let's at least preserve 'log_ret' if len >= 2
+            return z
+
         df = df.copy()
         
-        # 1. Base Price Action
-        df['body_size'] = (df['close'] - df['open']).abs()
-        df['upper_wick'] = df['high'] - df[['open', 'close']].max(axis=1)
-        df['lower_wick'] = df[['open', 'close']].min(axis=1) - df['low']
-        df['is_bullish'] = np.where(df['close'] >= df['open'], 1.0, -1.0)
+        # Ensure DatetimeIndex for Time Embeddings
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if 'time' in df.columns:
+                df['time'] = pd.to_datetime(df['time'])
+                df.set_index('time', inplace=True)
+            elif 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+                df.set_index('date', inplace=True)
+            elif 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'])
+                df.set_index('Date', inplace=True)
+        
+        # --- 1. Base Calcs ---
         df['log_ret'] = np.log(df['close'] / df['close'].shift(1)).fillna(0)
-
-        # 2. Volatility
+        df['body_size'] = (df['close'] - df['open']).abs()
+        df['body_size_norm'] = df['body_size'] / df['close']
+        df['is_bullish'] = np.where(df['close'] >= df['open'], 1.0, -1.0)
+        
+        # --- 2. Indicators ---
+        # RSI
+        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi() / 100.0
+        
+        # MACD
+        macd = MACD(close=df['close'])
+        df['macd'] = macd.macd()
+        df['macd_signal'] = macd.macd_signal()
+        
+        # Bollinger Bands
         bb = BollingerBands(close=df['close'], window=20, window_dev=2)
         df['bb_upper'] = bb.bollinger_hband()
         df['bb_lower'] = bb.bollinger_lband()
         df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['close']
         df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'] + 1e-6)
         
+        # EMAs
+        df['ema_20'] = EMAIndicator(close=df['close'], window=20).ema_indicator()
+        df['ema_50'] = EMAIndicator(close=df['close'], window=50).ema_indicator()
+        df['ema_20_dist'] = (df['close'] - df['ema_20']) / df['close']
+        df['ema_50_dist'] = (df['close'] - df['ema_50']) / df['close']
+        
+        # ATR
         df['atr'] = AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
         df['atr_norm'] = df['atr'] / df['close']
-
-        # 3. Momentum
-        df['rsi'] = RSIIndicator(close=df['close'], window=14).rsi() / 100.0
         
-        macd = MACD(close=df['close'])
-        df['macd'] = macd.macd()
-        df['macd_signal'] = macd.macd_signal()
-        df['macd_diff'] = macd.macd_diff()
-        
+        # Stochastic
         stoch = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14)
         df['stoch_k'] = stoch.stoch() / 100.0
         df['stoch_d'] = stoch.stoch_signal() / 100.0
-
-        # 4. Trend
-        df['ema_20'] = EMAIndicator(close=df['close'], window=20).ema_indicator()
-        df['ema_50'] = EMAIndicator(close=df['close'], window=50).ema_indicator()
-        df['dist_ema_50'] = (df['close'] - df['ema_50']) / df['close']
         
-        # Mock EMA 200 if not enough data
-        if len(df) > 200:
-             df['ema_200'] = EMAIndicator(close=df['close'], window=200).ema_indicator()
-        else:
-             df['ema_200'] = df['close']
-        df['dist_ema_200'] = (df['close'] - df['ema_200']) / df['close']
-
-        # 5. Volume
+        # VWAP
         vwap = VolumeWeightedAveragePrice(high=df['high'], low=df['low'], close=df['close'], volume=df['volume'])
         df['vwap'] = vwap.volume_weighted_average_price()
-        df['normalized_volume'] = df['volume'] / (df['volume'].rolling(50).mean() + 1e-6)
-
-        # 6. Time Features (Safe handling)
+        df['vwap_dist'] = (df['close'] - df['vwap']) / df['close']
+        
+        # Volume
+        df['normalized_volume'] = df['volume'] / (df['volume'].rolling(20).mean() + 1e-6)
+        
+        # --- 3. Time Embeddings ---
         if isinstance(df.index, pd.DatetimeIndex):
             df['hour_sin'] = np.sin(2 * np.pi * df.index.hour / 24)
             df['hour_cos'] = np.cos(2 * np.pi * df.index.hour / 24)
             df['day_sin'] = np.sin(2 * np.pi * df.index.dayofweek / 7)
             df['day_cos'] = np.cos(2 * np.pi * df.index.dayofweek / 7)
         else:
+            # Fallback if no datetime index
             df['hour_sin'] = 0.0
             df['hour_cos'] = 0.0
             df['day_sin'] = 0.0
             df['day_cos'] = 0.0
-
-        # 7. Agent Normalization (For Observation Space)
-        df['normalized_close'] = df['close'] / df['close'].iloc[0]
-
-        # 8. Signals (Placeholders for complex logic)
-        df['rsi_extreme'] = ((df['rsi'] > 0.7) | (df['rsi'] < 0.3)).astype(float)
+            
+        # Select and Fill
+        features = df[self.FEATURE_NAMES].fillna(0.0)
         
-        # MACD Weakening (Histogram shrinking)
-        df['macd_weakening'] = (df['macd_diff'].abs() < df['macd_diff'].shift(1).abs()).astype(float)
+        # Clip to avoid massive outliers exploding the NN
+        features = features.clip(lower=-10.0, upper=10.0)
         
-        # Price Overextended (> 2 ATR from moving average)
-        df['price_extension'] = (df['close'] - df['close'].rolling(20).mean()) / (df['atr'] + 1e-6)
-        df['price_overextended'] = (df['price_extension'].abs() > 2.0).astype(float)
+        return features
 
-        df['exit_signal_score'] = 0.0
-        df['turbulence'] = 0.0
-        df['log_ret_lag_1'] = df['log_ret'].shift(1).fillna(0)
-        df['log_ret_lag_2'] = df['log_ret'].shift(2).fillna(0)
+    def update_stream(self, tick: Dict[str, Union[float, str]]) -> np.ndarray:
+        """
+        Streaming Update (Inference Mode).
+        Adds tick to history -> Recomputes tail -> Returns 1D array.
+        """
+        # 1. Parse Tick
+        # Ensure tick has basic columns
+        required = ['open', 'high', 'low', 'close', 'volume']
+        if not all(k in tick for k in required):
+            raise ValueError(f"Tick missing required keys: {required}")
+            
+        # Add to history
+        self.history.append(tick)
         
-        # Market Structure
-        df['rolling_high'] = df['high'].rolling(14).max()
-        df['dist_to_high'] = (df['rolling_high'] - df['close']) / df['close']
-        df['rolling_low'] = df['low'].rolling(14).min()
-        df['dist_to_low'] = (df['close'] - df['rolling_low']) / df['close']
-
-        # Cleanup (Warmup)
-        # Drop initial rows where indicators are NaN
-        # But ensure we don't return empty if df is small
-        if len(df) > 50:
-            df = df.iloc[50:].copy()
+        # 2. Convert history to DataFrame
+        # Optimization: We only need enough history for the longest lookback (50 eps)
+        # But we keep more (200) to be safe.
+        df_hist = pd.DataFrame(list(self.history))
         
-        df = df.fillna(0)
-        return df
+        # Handle datetime if present (for 'time' column)
+        if 'time' in tick:
+            df_hist['time'] = pd.to_datetime(df_hist['time'])
+            df_hist.set_index('time', inplace=True)
+            
+        # 3. Compute Batch on Window
+        df_features = self.compute_batch(df_hist)
+        
+        # 4. Return ONLY the last row
+        return df_features.iloc[-1].values.astype(np.float32)
 
-# Singleton exposure
-feature_engine = FeatureEngine()
+# Global Singleton
+class FeatureRegistry:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(FeatureRegistry, cls).__new__(cls)
+            cls._instance.engine = UnifiedFeatureEngine()
+        return cls._instance
+    
+    @property
+    def feature_names(self):
+        return self.engine.FEATURE_NAMES
+        
+    @property
+    def output_dim(self):
+        return self.engine.get_output_dim()
+
+    def compute_batch(self, df):
+        return self.engine.compute_batch(df)
+
+    def update_stream(self, tick):
+        return self.engine.update_stream(tick)
+
+# Compatibility wrapper if needed (deprecated)
 def add_features(df):
-    return feature_engine.add_features(df)
+    reg = FeatureRegistry()
+    return reg.compute_batch(df)

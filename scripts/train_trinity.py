@@ -78,11 +78,17 @@ def load_data(data_path: str) -> pd.DataFrame:
         
     df.sort_index(inplace=True)
     
-    try:
-        df = add_features(df)
-        print(f"Shape after features: {df.shape}")
-    except Exception as e:
-        print(f"Features Error: {e}")
+    # Ensure columns are lowercase
+    df.columns = df.columns.str.lower()
+    
+    # Validation
+    required = ['open', 'high', 'low', 'close', 'volume']
+    if not all(col in df.columns for col in required):
+        raise ValueError(f"Missing columns! Have: {df.columns.tolist()}")
+
+    # Note: We rely on TradingEnv to compute features via FeatureRegistry
+    # df = add_features(df) 
+    print(f"Data columns: {df.columns.tolist()}")
         
     before_drop = len(df)
     df.dropna(inplace=True)

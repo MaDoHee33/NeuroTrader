@@ -77,14 +77,14 @@ def cmd_status(args):
     registry = ModelRegistry("models")
     
     print("\n" + "="*60)
-    print("📊 NEUROTRADER STATUS")
+    print("[*] NEUROTRADER STATUS")
     print("="*60)
     
     for role in ['scalper', 'swing', 'trend']:
         best = registry.get_best(role)
         versions = registry.list_versions(role)
         
-        print(f"\n🎯 {role.upper()}")
+        print(f"\n[+] {role.upper()}")
         print(f"   Versions: {len(versions)}")
         
         if best:

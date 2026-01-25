@@ -93,7 +93,13 @@ NeuroTrader/
 
 ---
 
-**Status:** ✅ V5 Optimization Complete (Jan 2026) | **OS:** Windows Native
+**Status:** ✅ V2.1 Unified Engine (Jan 2026) | **OS:** Windows Native
+
+## ⚡ V2.1 Critical Upgrade
+**Unified Feature Engine**: Solved training/inference divergence.
+-   **One Logic Rule**: `src/brain/features.py` handles ALL indicators.
+-   **DeepSeek Validated**: Architecture approved by Cloud AI audit.
+-   **Clean Slate**: Old V1 models deprecated. Training V2.1 from scratch.
 
 ## ⚡ V5 Optimization (New!)
 In consultation with Cloud AI, we have refactored the system for performance:

@@ -459,3 +459,21 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Next Steps:**
 - Monitor training progress.
 - Wait for first checkpoint (100k steps).
+
+
+### 23. Critical Logic Fix & V2.1 Refactor (Current)
+**Date:** 2026-01-25 (Night)
+**Event:** DeepSeek Cloud Consultation revealed a Critical Bug ("Schizophrenic Logic").
+**Problem:** The training environment (`TradingEnv`) and trading agent (`RLAgent`) used different logic to calculate features.
+- **Result:** Model learned one thing but saw another during inference.
+- **Severity:** CRITICAL - Guaranteed failure in live markets.
+
+**Actions Taken (The Fix):**
+1.  **Unified Feature Engine**: Implemented `src/brain/features.py` using a Singleton pattern.
+    -   Guarantees 100% logic parity between Batch Mode (Train) and Stream Mode (Trade).
+    -   Includes "Cold Start" protection (Zero-padding) to prevent crashes on startup.
+2.  **Validation**: Created `tests/test_feature_consistency.py` (The "Golden Rule" Test). Passed.
+3.  **Dry Run**: Verified end-to-end training stability (1000 steps).
+4.  **System Cleanup**: Deleted all old V1 models (incompatible).
+
+**Next Step**: Start fresh training of **NeuroTrader V2.1** (Clean Slate).

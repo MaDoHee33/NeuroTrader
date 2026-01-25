@@ -92,7 +92,7 @@ class AutoEvaluator:
             Dictionary containing all metrics
         """
         print(f"\n{'='*60}")
-        print(f"🔍 AUTO-EVALUATOR: {role.upper()}")
+        print(f"[SEARCH] AUTO-EVALUATOR: {role.upper()}")
         print(f"{'='*60}")
         print(f"Model: {model_path}")
         print(f"Data : {data_path}")
@@ -123,7 +123,7 @@ class AutoEvaluator:
         
         # Generate report
         print("\n" + "="*40)
-        print("📊 EVALUATION RESULTS")
+        print("[RESULTS] EVALUATION RESULTS")
         print("="*40)
         self._print_metrics(metrics, role)
         
@@ -228,13 +228,13 @@ class AutoEvaluator:
         criteria = EVALUATION_CRITERIA.get(role, {})
         primary = criteria.get('primary_metric', 'total_return')
         
-        print(f"\n💰 Financial Performance:")
+        print(f"\n[MONEY] Financial Performance:")
         print(f"   Total Return  : {metrics['total_return']:>10.2f}%")
         print(f"   Max Drawdown  : {metrics['max_drawdown']:>10.2f}%")
         print(f"   Sharpe Ratio  : {metrics['sharpe_ratio']:>10.2f}")
         print(f"   Final Equity  : ${metrics['final_equity']:>10,.2f}")
         
-        print(f"\n📈 Trading Behavior:")
+        print(f"\n[CHART] Trading Behavior:")
         print(f"   Total Trades  : {metrics['total_trades']:>10}")
         print(f"   Win Rate      : {metrics['win_rate']:>10.2f}%")
         print(f"   Profit Factor : {metrics['profit_factor']:>10.2f}")
@@ -242,8 +242,8 @@ class AutoEvaluator:
         print(f"   Market Exposure: {metrics['market_exposure']:>9.1f}%")
         
         # Highlight primary metric
-        status = "✅ PASS" if metrics.get('meets_threshold', False) else "❌ FAIL"
-        print(f"\n🎯 Primary Metric ({primary}): {metrics.get(primary, 0):.2f} {status}")
+        status = "[PASS]" if metrics.get('meets_threshold', False) else "[FAIL]"
+        print(f"\n[TARGET] Primary Metric ({primary}): {metrics.get(primary, 0):.2f} {status}")
     
     def compare_and_promote(
         self,
@@ -303,7 +303,7 @@ class AutoEvaluator:
         with open(report_path, 'w') as f:
             f.write(report_text)
         
-        print(f"📝 Report saved: {report_path}")
+        print(f"[NOTE] Report saved: {report_path}")
         return report_text
 
 

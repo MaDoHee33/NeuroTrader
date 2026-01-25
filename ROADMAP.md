@@ -58,9 +58,11 @@
 - [ ] **Verify Strategy Connection**: Ensure `runner.py` actually executes trades based on `brain` output.
 - [ ] **Deploy Services**: User needs to run `sudo systemctl enable` commands.
 
-### 🟡 In Progress
-- [ ] Fine-tuning existing RL model.
-- [ ] Testing `main.py` loop stability.
+### 🟡 In Progress (V2.1 Refactor)
+- [x] **DeepSeek Audit**: Identify "Schizophrenic Logic" bug.
+- [x] **Unified Feature Engine**: Implement shared logic for Train/Trade.
+- [x] **System Cleanup**: Wipe old incompatible models.
+- [ ] **Train V2.1**: Retrain Scalper on clean architecture.
 
 ---
 
