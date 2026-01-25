@@ -463,7 +463,7 @@ python scripts/autopilot.py compare --role X # Compare versions
 
 ### 23. Critical Logic Fix & V2.1 Refactor (Current)
 **Date:** 2026-01-25 (Night)
-**Event:** DeepSeek Cloud Consultation revealed a Critical Bug ("Schizophrenic Logic").
+**Event:** Qwen-3 Coder (Cloud) Consultation revealed a Critical Bug ("Schizophrenic Logic").
 **Problem:** The training environment (`TradingEnv`) and trading agent (`RLAgent`) used different logic to calculate features.
 - **Result:** Model learned one thing but saw another during inference.
 - **Severity:** CRITICAL - Guaranteed failure in live markets.

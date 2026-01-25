@@ -59,10 +59,15 @@
 - [ ] **Deploy Services**: User needs to run `sudo systemctl enable` commands.
 
 ### 🟡 In Progress (V2.1 Refactor)
-- [x] **DeepSeek Audit**: Identify "Schizophrenic Logic" bug.
+- [x] **Qwen-3 Audit**: Identify "Schizophrenic Logic" bug.
 - [x] **Unified Feature Engine**: Implement shared logic for Train/Trade.
 - [x] **System Cleanup**: Wipe old incompatible models.
 - [ ] **Train V2.1**: Retrain Scalper on clean architecture.
+
+### 🔵 Next Up (Qwen Recs)
+- [ ] **Refine Reward**: Implement Progressive Time Penalty for Scalper.
+- [ ] **Robustness Tests**: Add "Cold Start" & "NaN" cases to feature tests.
+- [ ] **Data Validation**: Add circuit breaker for data fetcher.
 
 ---
 

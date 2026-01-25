@@ -98,7 +98,7 @@ NeuroTrader/
 ## ⚡ V2.1 Critical Upgrade
 **Unified Feature Engine**: Solved training/inference divergence.
 -   **One Logic Rule**: `src/brain/features.py` handles ALL indicators.
--   **DeepSeek Validated**: Architecture approved by Cloud AI audit.
+-   **Qwen-Validatd**: Architecture approved by Qwen-3 Coder (Cloud) audit.
 -   **Clean Slate**: Old V1 models deprecated. Training V2.1 from scratch.
 
 ## ⚡ V5 Optimization (New!)
