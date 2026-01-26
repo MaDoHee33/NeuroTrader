@@ -22,7 +22,7 @@ safety:
 llm:
   provider: "ollama"
   model_name: "llama3" # Ensure you have run: ollama pull mistral
-  base_url: "http://localhost:11434"
+  base_url: "https://inconvincibly-unslakeable-barney.ngrok-free.dev"
   timeout_sec: 60
   low_vram: true
 

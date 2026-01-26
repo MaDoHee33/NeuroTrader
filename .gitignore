@@ -9,6 +9,7 @@ data/
 __pycache__/
 *.pyc
 venv/
+.venv/
 .env
 
 # Secrets
@@ -25,3 +26,4 @@ tools/d.py
 # Logs & Models (Local)
 logs/
 models/
+archive/

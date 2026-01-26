@@ -1,0 +1,48 @@
+# NeuroTrader Centralized Configuration
+
+system:
+  project_name: "NeuroTrader"
+  version: "2.1.0"
+  log_level: "INFO"
+  seed: 42
+
+environment:
+  tickers: ["XAUUSD"]
+  timeframe: "5m"
+  bar_type: "XAUUSD.SIM-5-MINUTE-LAST-EXTERNAL"
+  initial_balance: 10000.0
+  leverage: 100
+  history_size: 60  # Optimized from 100 -> 60
+
+training:
+  algorithm: "PPO"
+  policy: "MlpPolicy"
+  total_timesteps: 1000000
+  parallel_envs: 4
+  
+  hyperparameters:
+    learning_rate: 0.0003
+    n_steps: 2048
+    batch_size: 64
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+
+features:
+  use_ta_lib: true
+  normalize_inputs: true
+  indicators:
+    - "rsi"
+    - "macd"
+    - "bb"
+    - "atr"
+    - "ema_20"
+    - "ema_50"
+
+paths:
+  data: "data/nautilus_store"
+  models: "models/checkpoints"
+  logs: "logs/tensorboard"
