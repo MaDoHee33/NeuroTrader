@@ -106,8 +106,8 @@ def get_hyperparameters(role: str) -> dict:
             'n_steps': 256,
             'batch_size': 64,
             'gamma': 0.85,
-            'learning_rate': 3e-4,
-            'ent_coef': 0.01
+            'learning_rate': 1e-4,
+            'ent_coef': 0.05
         },
         'swing': {
             'n_steps': 1024,

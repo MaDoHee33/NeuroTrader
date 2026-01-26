@@ -477,3 +477,41 @@ python scripts/autopilot.py compare --role X # Compare versions
 4.  **System Cleanup**: Deleted all old V1 models (incompatible).
 
 **Next Step**: Start fresh training of **NeuroTrader V2.1** (Clean Slate).
+
+---
+
+### 24. Resume Training V2.1 (Scalper)
+**Date:** 2026-01-26
+**Action:** Started fresh training of Scalper model following the critical logic fix.
+- Command: `python scripts/autopilot.py train --role scalper --fresh`
+- **Status:** **Training Complete (100%)**.
+    - Reached 1,000,000 steps at 12:55 (Duration: ~3 hours).
+    - Currently performing Auto-Evaluation and Model Registration.
+
+### 25. Evaluation Results (Scalper V2.1)
+**Date:** 2026-01-26
+**Manual Evaluation:** Ran `autopilot.py evaluate` on Test Set (9,961 steps).
+- **Total Return:** **+0.53%**
+- **Max Drawdown:** -0.33%
+- **Total Trades:** 1
+- **Avg Holding:** 50.0 steps (~4 hours)
+- **Win Rate:** 100%
+
+**Analysis:**
+- **Positive:** Solved the "Infinite Hold" bug (Holding dropped from 9,000+ -> 50 steps).
+- **Negative:** Extremely passive (only 1 trade in ~1 month of M5 data). The model is "Survivor Bias" - trading only when 100% sure.
+- **Verdict:** Safe but not aggressive enough for a Scalper. Needs Lower Entropy Coefficient or Reward Shaping to encourage activity.
+
+---
+
+### 26. Phase 3: Aggressive Scalping (DeepSeek Fixes)
+**Date:** 2026-01-26
+**Changes:**
+- **Reward Function**: Added Steep Unrealized PnL Reward and Progressive Time Decay.
+- **Hyperparameters**: Increased Entropy (0.01 -> 0.05) for exploration, Reduced LR (1e-4) for stability.
+- **Goal**: Fix Passivity. Encourage model to trade more often (>20 trades/month).
+
+**Action:** Started fresh training.
+- Command: `python scripts/autopilot.py train --role scalper --fresh`
+- **Expected Outcome**: Higher trade count, potentially lower Win Rate (but positive Expectancy).
+

@@ -105,6 +105,7 @@ class TradingEnv(gym.Env):
         self.equity = self.initial_balance
         self.trades_history = []
         self.steps_in_position = 0  # Reset holding time
+        self.entry_price = 0.0      # Track entry price for PnL calculation
         self.returns_history.clear()
         
         # Initialize Risk Manager with starting state
@@ -173,6 +174,8 @@ class TradingEnv(gym.Env):
                         self.balance -= cost
                         trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
                         self.steps_in_position = 0  # Reset holding counter on entry
+                        self.entry_price = current_price # Track Entry
+
                     else:
                         # Blocked
                         risk_penalty = -0.1 # Small penalty for attempting forbidden trade
@@ -281,33 +284,38 @@ class TradingEnv(gym.Env):
         # Weights based on research best practices
         # --- TRINITY REWARD SYSTEM ---
         if self.agent_type == 'scalper':
-            # SCALPER V4 (HARD MODE): Realized PnL Only + Sniper Penalty
+            # SCALPER V5 (AGGRESSIVE MODE): Continuous Feedback + Progressive Decay
             
-            # 1. Base Reward: 0 for holding (no unrealized gains!)
-            reward = 0
+            # Default to log_return (Continuous Feedback)
+            # Give immediate feedback for every step of price movement
+            reward = log_return * 20.0 
             
-            # 2. Realized PnL Reward (Huge bonus if profitable)
+            # 2. Realized PnL Reward (Event Bonus)
             if trade_info is not None and (trade_info['action'] == 'SELL' or trade_info['action'] == 'FORCE_SELL'):
-                 if log_return > 0:
-                     # Realized Profit! Give huge reward
-                     reward += log_return * 100.0
+                 # Calculate Full Trade PnL
+                 trade_ret = (current_price - self.entry_price) / self.entry_price
+                 
+                 if trade_ret > 0:
+                     # Profit Bonus: 50x return (e.g. 0.1% -> +0.05 reward)
+                     # Using a multiplier to signify "Job Done"
+                     reward += trade_ret * 50.0
                  else:
-                     # Realized Loss. Penalize proportional to loss
-                     reward += log_return * 50.0 # Loss is naturally negative
-            
-            # 3. Sniper Penalty (Time Decay)
-            # If finding trade takes time, that's fine.
-            # But if IN POSITION and NOT PROFITING quickly -> Punishment
+                     # Loss Penalty: Standard
+                     reward += trade_ret * 20.0
+
+            # 3. Progressive Time Decay (Optimization)
+            # Instead of harsh penalty after 12 steps, start gentle and ramp up
             if self.position > 0:
-                if self.steps_in_position > self.sniper_penalty_start: # Late stage
-                    # Heavy penalty for loitering
-                    reward -= self.sniper_penalty_amt
-                elif self.steps_in_position > (self.sniper_penalty_start // 2): # Mid stage
-                    reward -= (self.sniper_penalty_amt / 10.0)
+                # Free steps: 12 (1 hour)
+                # Then decay starts
+                if self.steps_in_position > 12:
+                    excess = self.steps_in_position - 12
+                    decay = excess * 0.01 # 0.01, 0.02, 0.03...
+                    reward -= decay
 
             # 4. Force Exit Penalty
             if trade_info is not None and trade_info.get('action') == 'FORCE_SELL':
-                reward -= self.force_exit_penalty # Punishment for failing to close on time
+                reward -= self.force_exit_penalty
 
         elif self.agent_type == 'swing':
             # SWING: Trend Capturing

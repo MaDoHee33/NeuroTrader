@@ -136,16 +136,16 @@ class AutoEvaluator:
         else:
             df = pd.read_csv(data_path)
             
-        if 'time' in df.columns:
             df['time'] = pd.to_datetime(df['time'])
             df.set_index('time', drop=False, inplace=True)
         df.sort_index(inplace=True)
         
-        if 'ema_9' not in df.columns:
-            df = add_features(df)
-            df.dropna(inplace=True)
-            
+        # Normalize column names
+        df.columns = df.columns.str.lower()
+        
+        
         return df
+
     
     def _run_simulation(self, model, env, df) -> pd.DataFrame:
         """Run trading simulation and collect results."""
