@@ -484,7 +484,19 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Date:** 2026-01-26
 **Action:** Started fresh training of Scalper model following the critical logic fix.
 - Command: `python scripts/autopilot.py train --role scalper --fresh`
-- **Status:** **Training Complete (100%)**.
+- **Status:** Completed 1,000,000 steps.
+
+### 25. Evaluation of Aggressive Scalper (V2.2)
+**Date:** 2026-01-27
+**Action:** Evaluated the fina, trained model (1M steps).
+- **Result:** **0 Trades** (Zero Activity).
+- **Metrics:** Return 0.0%, Drawdown 0.0%.
+- **Analysis:** The model has converged to a locally optimal policy of "Doing Nothing" to avoid risk. The increased entropy and unrealized PnL rewards were insufficient to overcome the penalty of entering trades (spread + potential loss).
+- **Root Cause (Hypothesis):**
+    1. Risk Manager might be too strict (News/Turbulence).
+    2. Reward for "Hold" (0) is better than "Enter" (Negative immediate cost due to spread/commission).
+    3. The "Progressive Decay" penalty might be too harsh, discouraging entry.
+**Next Steps:** Needs "Forced Entry" curriculum or simpler reward function (Pure PnL).
     - Reached 1,000,000 steps at 12:55 (Duration: ~3 hours).
     - Currently performing Auto-Evaluation and Model Registration.
 
@@ -514,4 +526,48 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Action:** Started fresh training.
 - Command: `python scripts/autopilot.py train --role scalper --fresh`
 - **Expected Outcome**: Higher trade count, potentially lower Win Rate (but positive Expectancy).
+
+
+---
+
+### 27. Phase 3.5: Fix Zero Trades (Entry Bonus)
+**Date:** 2026-01-27
+**Context:** Previous Aggressive model failed (0 Trades). DeepSeek identified "Entry Barrier" (Spread Penalty > Hold Reward).
+**Action:** 
+- Modified `src/brain/env/trading_env.py`: Added `Entry Bonus (+0.05)` when `action == BUY`.
+- Goal: Offset the immediate negative PnL from spread/commission to encourage exploration.
+- **Starting Fresh Training**: Scalper V2.3.
+- **Status:** Completed 1,000,000 steps.
+
+### 28. Evaluation of Scalper V2.3 (Entry Bonus)
+**Date:** 2026-01-27
+**Results (Test Set):**
+- **Trades:** **51** (Success! "Zero Trade" bug fixed).
+- **Return:** **+4.15%** ($10,408).
+- **Win Rate:** **66.67%**.
+- **Profit Factor:** 2.52.
+- **Drawdown:** -6.59%.
+- **Avg Holding:** 194 steps (~16 hours).
+- **Exposure:** 99.5% (Always in market).
+
+**Analysis:**
+- The **Entry Bonus (+0.05)** worked perfectly. It broke the psychological barrier of spread costs.
+- **Behavior:** The model transformed from "Passive/Scared" to "Always Active" (likely a Swing/Trend behavior rather than pure Scalping, given the 16h holding time).
+- **Profitability:** It is profitable (+4%) with a high win rate (66%).
+- **Caution:** High exposure (99.5%) means it's carrying risk constantly. Ideally, a Scalper should be "In and Out".
+
+**Verdict:** **PASSED**. We have a working, profitable model.
+**Next Step:** Refine to reduce holding time (Hybrid Reward: Entry Bonus + Time Decay).
+
+---
+
+### 29. Phase 4: Velocity Scalper (V2.4)
+**Date:** 2026-01-27
+**Context:** V2.3 was profitable (+4%) but acted like a Swing Trader (16h holding).
+**Goal:** Force "Scalping Behavior" (Hold < 1 hour) using Velocity Rewards.
+**Changes (trading_env.py):**
+1.  **Velocity Reward:** `reward += log_return * 50.0 * (1 / steps)` (Incentivize quick profit).
+2.  **Exponential Decay:** `decay = 0.005 * (steps - 12)^1.5` (Heavy penalty after 1 hour).
+**Action:** Started fresh training.
+
 
