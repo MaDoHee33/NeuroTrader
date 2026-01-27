@@ -283,31 +283,26 @@ class TradingEnv(gym.Env):
         # 6. Composite reward (weighted combination)
         # Weights based on research best practices
         # --- TRINITY REWARD SYSTEM ---
-             # SCALPER V2.4 (VELOCITY MODE): Focus on "Profit per Minute"
+            # SCALPER V2.5 (BALANCED DECAY): Entry Bonus + Stronger Linear Decay
             
             # 1. PnL (Continuous)
             reward = log_return * 20.0 
             
-            # 2. Entry Bonus (Kept from V2.3 as it solved Zero Trade bug)
+            # 2. Entry Bonus (Critical for Activity)
             if trade_info is not None and trade_info.get('action') == 'BUY':
                  reward += 0.05
 
-            # 3. Velocity Reward (New): Reward fast profits, punish slow profits
-            # If we are in profit, multiply reward by speed factor
-            if self.position > 0 and log_return > 0:
-                # Bonus for speed: 1.0 at step 1, 0.5 at step 2, etc.
-                speed_bonus = 1.0 / max(1, self.steps_in_position)
-                reward += log_return * 50.0 * speed_bonus
-
-            # 4. Exponential Time Decay (New: Harsher penalty)
-            # Starts after 12 steps (1 hour)
+            # 3. Steeper Linear Time Decay (Optimization)
+            # V2.3 used 0.01 (too weak). V2.4 used Exponential (too strong).
+            # V2.5 uses 0.05 per step (Linear).
+            # Cost at 1 hour (12 steps) = 0
+            # Cost at 2 hours (24 steps) = 12 * 0.05 = -0.6 (Significant but not fatal)
             if self.position > 0 and self.steps_in_position > 12:
-                # Decay = 0.01 * (steps - 12)^1.5
                 excess = self.steps_in_position - 12
-                decay = 0.005 * (excess ** 1.5) 
+                decay = excess * 0.05 
                 reward -= decay
 
-            # 5. Force Exit Penalty
+            # 4. Force Exit Penalty
             if trade_info is not None and trade_info.get('action') == 'FORCE_SELL':
                 reward -= self.force_exit_penalty
 

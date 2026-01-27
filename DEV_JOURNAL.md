@@ -569,5 +569,33 @@ python scripts/autopilot.py compare --role X # Compare versions
 1.  **Velocity Reward:** `reward += log_return * 50.0 * (1 / steps)` (Incentivize quick profit).
 2.  **Exponential Decay:** `decay = 0.005 * (steps - 12)^1.5` (Heavy penalty after 1 hour).
 **Action:** Started fresh training.
+- **Status:** Completed 1,000,000 steps.
+
+### 30. Evaluation of Scalper V2.4 (Velocity Mode)
+**Date:** 2026-01-27
+**Results (Test Set):**
+- **Trades:** **2** (Regression: Back to passive behavior).
+- **Return:** **-0.87%**.
+- **Avg Holding:** 211 steps.
+- **Analysis:** The "Exponential Decay" was likely **too harsh**. It created a "Fear of entering" similar to V2.2. The model calculated that unless profit is instant, the decay will destroy the reward, so it chose not to play.
+- **Comparison:** V2.3 (Entry Bonus + Linear Decay) was superior (+4%, 51 Trades).
+
+**Verdict:** **FAILED**. Exponential penalty killed the strategy.
+**Next Step:** Revert logic to **V2.3 (Entry Bonus)** but tune the Linear Decay slightly to be steeper than V2.3 but softer than V2.4.
+
+---
+
+### 31. Phase 5: Tuned Scalper (V2.5)
+**Date:** 2026-01-27
+**Context:** V2.4 (Exponential) failed (fear of trading). V2.3 (Linear 0.01) was too lenient (held 16h).
+**Goal:** Find the "Goldilocks Zone" between V2.3 and V2.4.
+**Changes:**
+- **Reverted:** Removed Velocity Reward (too complex).
+- **restored:** Entry Bonus (+0.05).
+- **Tuned:** Increased Linear Decay from `0.01` to `0.05` per step.
+    - Cost at 2 hours (24 steps) = -0.6 (vs -0.12 in V2.3).
+    - This should be "painful enough" to force exit without causing panic.
+**Action:** Started fresh training.
+
 
 
