@@ -593,9 +593,79 @@ python scripts/autopilot.py compare --role X # Compare versions
 - **Reverted:** Removed Velocity Reward (too complex).
 - **restored:** Entry Bonus (+0.05).
 - **Tuned:** Increased Linear Decay from `0.01` to `0.05` per step.
-    - Cost at 2 hours (24 steps) = -0.6 (vs -0.12 in V2.3).
-    - This should be "painful enough" to force exit without causing panic.
+    - Cost at 2 hours (24 steps) = -0.6 (High pressure).
+    - Expectation: Force exit without panic.
 **Action:** Started fresh training.
+- **Status:** Paused at **100,000 steps** (User Request).
+- **Checkpoint:** Saved (`models/checkpoints/scalper_XAUUSD_M5/checkpoint_100000.zip`).
+- **Next:** Resume training to reach 1,000,000 steps.
 
+---
 
+## 3. Advanced Scalping Techniques (Consultation)
+**Date**: 2026-01-27
+**Context**: While V2.5 trains, asked for "Plan B" if holding time is still high.
+**Key Insights from DeepSeek**:
+1.  **Reduce `n_steps`**: Current `256` (M5) = ~21 hours horizon. Too long!
+    - Suggestion: Reduce to **64 (5 hours)** or **32 (2.5 hours)** to make the agent "Short-Sighted".
+2.  **Incentivize Fast Wins**: `reward += bonus * (max_time - holding_time)`.
+3.  **Drawdown Duration Penalty**: Penalize holding losing positions specifically.
+**Action Plan**: If V2.5 fails (or holds too long), **V2.6** will reduce `n_steps` to 64.
+
+---
+
+### 32. Hybrid Development Strategy (PPO + Self-Evolving AI)
+**Date:** 2026-01-28
+**Context:** User requested comprehensive plan to develop trading AI using hybrid approach: maintain PPO baseline while developing Self-Evolving capabilities.
+
+**DeepSeek Consultation Results:**
+- System is **partially ready** for new Blueprint
+- Recommended **Hybrid Approach**: PPO continues as baseline + Self-Evolving modules developed in parallel
+- PPO models won't be discarded - used as Experience Source, Baseline Benchmark, Warm Start
+
+**Documentation Created:**
+- `docs/HYBRID_DEVELOPMENT_PLAN.md` - Comprehensive 6-phase roadmap
+
+**V2.7 Scalper Changes:**
+- Updated `trading_env.py`: PnL x25, Entry Bonus 0.08, Time Decay 0.04/step (starts at 4 bars)
+- Updated `training_config.yaml`: ent_coef 0.03
+- Reduced `time_limit` from 36 → 24 steps (2 hours)
+- Started fresh training: 500k steps with `--suffix v27`
+
+---
+
+### 33. Self-Evolving AI Modules Created
+**Date:** 2026-01-28
+**Objective:** Build foundation for Self-Evolving AI while V2.7 trains.
+
+**New Package:** `src/evolving/`
+
+| Module | Description | Lines of Code |
+|--------|-------------|:-------------:|
+| `curiosity.py` | Intrinsic Curiosity Module - novelty, prediction error, pattern discovery | ~350 |
+| `experience_buffer.py` | Lifelong learning memory with priority-based eviction | ~380 |
+| `difficulty_scaler.py` | Curriculum learning with progressive difficulty | ~350 |
+| `hybrid_agent.py` | Integration of PPO + Curiosity + Experience + Curriculum | ~400 |
+
+**Key Classes:**
+- `CuriosityModule`: Provides intrinsic rewards for exploration (ICM-based)
+- `ExperienceBuffer`: Priority-based experience storage with JSON persistence
+- `CurriculumManager`: Tracks performance and advances difficulty levels
+- `HybridTradingAgent`: Combines PPO model with all self-evolving components
+
+**Design Principles:**
+- Low resource usage (no extra neural networks in Curiosity - uses hash-based counting)
+- Persistence (all modules save/load state to JSON)
+- Incremental integration (can enable/disable each component)
+
+**Status:** 
+- ✅ All modules created
+- ✅ Python bytecode generated (confirmed by `__pycache__`)
+- 🔄 V2.7 Scalper training running (~6% complete)
+
+**Next Steps:**
+1. Wait for V2.7 training to complete
+2. Backtest V2.7 Scalper
+3. Create integration test for Self-Evolving modules
+4. If V2.7 passes, proceed with Hybrid integration
 

@@ -46,7 +46,7 @@ class TradingEnv(gym.Env):
         
         # Reward Configuration (Default values if not provided)
         self.reward_config = reward_config if reward_config else {}
-        self.time_limit = self.reward_config.get('max_holding_steps', 36)
+        self.time_limit = self.reward_config.get('max_holding_steps', 24)  # V2.7: 24 steps = 2 hours
         self.sniper_penalty_start = self.reward_config.get('sniper_penalty_start', 12)
         self.sniper_penalty_amt = self.reward_config.get('sniper_penalty_amt', 0.1)
         self.force_exit_penalty = self.reward_config.get('force_exit_penalty', 1.0)
@@ -283,28 +283,34 @@ class TradingEnv(gym.Env):
         # 6. Composite reward (weighted combination)
         # Weights based on research best practices
         # --- TRINITY REWARD SYSTEM ---
-            # SCALPER V2.5 (BALANCED DECAY): Entry Bonus + Stronger Linear Decay
+        if self.agent_type == 'scalper':
+            # SCALPER V2.7 (AGGRESSIVE SHORT-TERM): Steeper decay + Higher bonuses
+            # Goal: Force holding time < 1 hour (12 steps on M5)
             
-            # 1. PnL (Continuous)
-            reward = log_return * 20.0 
+            # 1. PnL (Continuous) - Increased multiplier
+            reward = log_return * 25.0 
             
-            # 2. Entry Bonus (Critical for Activity)
+            # 2. Entry Bonus (Critical for Activity) - Increased to overcome spread
             if trade_info is not None and trade_info.get('action') == 'BUY':
-                 reward += 0.05
+                 reward += 0.08  # V2.7: Increased from 0.05
 
-            # 3. Steeper Linear Time Decay (Optimization)
-            # V2.3 used 0.01 (too weak). V2.4 used Exponential (too strong).
-            # V2.5 uses 0.05 per step (Linear).
-            # Cost at 1 hour (12 steps) = 0
-            # Cost at 2 hours (24 steps) = 12 * 0.05 = -0.6 (Significant but not fatal)
-            if self.position > 0 and self.steps_in_position > 12:
-                excess = self.steps_in_position - 12
-                decay = excess * 0.05 
+            # 3. Steeper Time Decay (V2.7)
+            # Start at 4 bars (20min) with stronger penalty (0.04/step)
+            if self.position > 0 and self.steps_in_position > 4:
+                excess = self.steps_in_position - 4
+                decay = excess * 0.04  # V2.7: Increased from 0.02
                 reward -= decay
 
-            # 4. Force Exit Penalty
+            # 4. Speed Bonus: Higher reward for quick profitable exits
+            if trade_info is not None and trade_info.get('action') == 'SELL':
+                if log_return > 0 and self.steps_in_position < 12:  # < 1 hour
+                    speed_bonus = 0.15 * (12 - self.steps_in_position) / 12.0  # V2.7: Increased
+                    reward += speed_bonus
+
+            # 5. Force Exit Penalty
             if trade_info is not None and trade_info.get('action') == 'FORCE_SELL':
                 reward -= self.force_exit_penalty
+
 
         elif self.agent_type == 'swing':
             # SWING: Trend Capturing

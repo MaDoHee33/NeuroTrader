@@ -6,11 +6,12 @@ from datetime import datetime
 
 # Setup paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
-sys.path.append(str(ROOT_DIR))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 try:
     from src.body.mt5_driver import MT5Driver
-    from src.brain.feature_eng import add_features
+    from src.brain.features import add_features
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     print("Ensure you are running this from the project root or scripts folder.")

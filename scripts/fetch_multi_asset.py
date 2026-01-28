@@ -12,7 +12,7 @@ sys.path.append(str(ROOT_DIR))
 
 try:
     from src.body.mt5_driver import MT5Driver
-    from src.brain.feature_eng import add_features
+    from src.brain.features import add_features
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     sys.exit(1)
@@ -36,9 +36,9 @@ async def main():
     # Timeframes to fetch
     timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
     
-    # Max Count logic (approximate max for MT5 is usually limited by terminal settings)
-    # We will try a safe number.
-    MAX_COUNT = 50_000 
+    # Max Count logic - attempt to fetch all available data
+    # MT5 theoretical limit is ~2 million bars, but practical limit depends on broker and terminal settings
+    MAX_COUNT = 999_999  # Large number to get maximum available data 
 
     try:
         for base in targets:

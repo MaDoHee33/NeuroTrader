@@ -12,7 +12,8 @@
 **NeuroTrader** is a fully autonomous, hybrid algorithmic trading system that combines:
 1.  **Traditional Quant**: Robust execution and backtesting via `NautilusTrader`.
 2.  **AI/ML**: Reinforcement Learning (RL) and LLM-based decision making.
-3.  **Automation**: Self-correcting pipelines that run 24/7 on Hybrid Linux/Windows Systemd.
+3.  **Self-Evolving AI**: Curiosity-driven exploration with lifelong learning.
+4.  **Automation**: Self-correcting pipelines that run 24/7 on Hybrid Linux/Windows Systemd.
 
 ### 🏗️ Architecture (The "3-Tier Automation")
 *   **Tier 1: Always-On Core** (`neuro-trader.service`) - The execution engine running `src/main.py`.
@@ -35,15 +36,33 @@
 - [x] Implement Auto-Restart Scripts (`scripts/start_node.sh`).
 - [x] Create Watchdog/Health-Check Scripts (`scripts/check_health.py`).
 
-### 🚧 Phase 3: Intelligence & Strategy (Current Focus)
-- [ ] **Data Quality**: Ensure `scripts/update_data.py` handles gap-filling perfectly.
+### ✅ Phase 3: Intelligence & Strategy (Completed)
+- [x] **Data Quality**: Ensure `scripts/update_data.py` handles gap-filling perfectly.
 - [x] **Strategy Logic**: Connect `Brain` (AI) signals to `NeuroBridgeStrategy` in Nautilus.
 - [x] **Risk Management**: Implement Turbulence Index (FinRL) for crash protection.
 - [x] **Multi-Agent Architecture**: Upgrade Agent to support Ensemble models.
-- [ ] **Model Iteration**: Improve the RL Agent (PPO/LSTM) in `src/brain/`.
-- [ ] **Live Test**: Run the system in "Paper Mode" (Mock Money) for 1 week uninterrupted.
+- [x] **Model Iteration**: Improve the RL Agent (PPO/LSTM) in `src/brain/`.
 
-### 🔮 Phase 4: Interface & Scaling (Future)
+### 🚧 Phase 4: Trinity System & Optimization (Current)
+- [x] **Trinity Architecture**: 3 specialized agents (Scalper, Swing, Trend)
+- [x] **Unified Feature Engine**: `src/brain/features.py` with FeatureRegistry
+- [x] **Model Registry**: Versioned model storage with auto-promotion
+- [x] **Hyperparameter Tuning**: Optuna integration with behavioral penalties
+- [/] **V2.7 Scalper Training**: Steeper time decay for faster trades (In Progress)
+- [ ] **Paper Trading**: Run system in mock mode for 1 week uninterrupted
+
+### 🧬 Phase 5: Self-Evolving AI (NEW - In Progress)
+- [x] **Curiosity Module**: Intrinsic rewards for exploration (`src/evolving/curiosity.py`)
+- [x] **Experience Buffer**: Lifelong learning memory (`src/evolving/experience_buffer.py`)
+- [x] **Curriculum Manager**: Progressive difficulty scaling (`src/evolving/difficulty_scaler.py`)
+- [x] **Market Regime Detector**: Real-time condition classification (`src/evolving/regime_detector.py`)
+- [x] **Hybrid Agent**: Integration wrapper (`src/evolving/hybrid_agent.py`)
+- [x] **Unit Tests**: Test suite (`tests/test_evolving.py`)
+- [ ] **Integration Test**: Run with V2.7 PPO model
+- [ ] **Adaptive Learning**: Meta-learning for market regime adaptation
+- [ ] **Production Deployment**: Live paper trading with Self-Evolving capabilities
+
+### 🔮 Phase 6: Interface & Scaling (Future)
 - [ ] **Dashboard**: A Web UI (Streamlit/FastAPI) to view live stats (reading `data/status.json`).
 - [ ] **Notifications**: Enhanced Discord alerts (Trade execution, Daily PnL).
 - [ ] **Multi-Asset**: Scale from XAUUSD to multiple pairs.
@@ -51,28 +70,30 @@
 ---
 
 ## 📝 Current Status Checklist
-*Updated: 2026-01-19*
+*Updated: 2026-01-28*
 
-### 🔴 Immediate Next Priorities
-- [ ] **Fix Data Gap Filling**: `update_data.py` needs to be robust against network drops.
-- [ ] **Verify Strategy Connection**: Ensure `runner.py` actually executes trades based on `brain` output.
-- [ ] **Deploy Services**: User needs to run `sudo systemctl enable` commands.
+### 🟢 Completed Today
+- [x] **Hybrid Development Plan**: Created `docs/HYBRID_DEVELOPMENT_PLAN.md`
+- [x] **Self-Evolving Modules**: 5 new modules in `src/evolving/`
+- [x] **V2.7 Scalper Config**: Updated reward function for faster trading
+- [x] **Unit Tests**: Created `tests/test_evolving.py`
+- [x] **Usage Examples**: Created `examples/evolving_usage.py`
 
-### 🟡 In Progress (V2.1 Refactor)
-- [x] **Qwen-3 Audit**: Identify "Schizophrenic Logic" bug.
-- [x] **Unified Feature Engine**: Implement shared logic for Train/Trade.
-- [x] **System Cleanup**: Wipe old incompatible models.
-- [ ] **Train V2.1**: Retrain Scalper on clean architecture.
+### 🟡 In Progress
+- [/] **V2.7 Scalper Training**: 500k steps (~25% complete)
+- [/] **Documentation Update**: README, ROADMAP, DEV_JOURNAL
 
-### 🔵 Next Up (Qwen Recs)
-- [ ] **Refine Reward**: Implement Progressive Time Penalty for Scalper.
-- [ ] **Robustness Tests**: Add "Cold Start" & "NaN" cases to feature tests.
-- [ ] **Data Validation**: Add circuit breaker for data fetcher.
+### 🔵 Next Up
+- [ ] **Backtest V2.7**: Evaluate holding time metrics
+- [ ] **Integration Test**: HybridTradingAgent with V2.7 model
+- [ ] **Market Regime Integration**: Connect detector to HybridAgent
 
 ---
 
 ## 💾 Technical Context
-*   **OS**: Linux (Ubuntu/Debian)
+*   **OS**: Windows (Primary), Linux (Future Deployment)
 *   **Python**: 3.10+ (Virtualenv `.venv`)
-*   **Key Libs**: `nautilus_trader`, `mt5linux`, `stable_baselines3`, `pandas`
-*   **Config**: `config/main_config.yaml`
+*   **Key Libs**: `stable_baselines3`, `sb3-contrib`, `gymnasium`, `pandas`, `numpy`
+*   **Config**: `config/training_config.yaml`
+*   **Self-Evolving**: `src/evolving/` (Low resource, numpy-only design)
+

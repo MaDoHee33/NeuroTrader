@@ -35,6 +35,42 @@ We deploy 3 specialized agents, each with unique reward functions and data horiz
 
 ---
 
+## 🧬 V6: Self-Evolving AI (NEW!)
+
+### Hybrid Development Approach
+Combining PPO baseline with Self-Evolving AI capabilities for continuous learning.
+
+### New Modules (`src/evolving/`)
+| Module | Description |
+|--------|-------------|
+| **🔍 CuriosityModule** | Intrinsic rewards for exploration (ICM-based) |
+| **📚 ExperienceBuffer** | Lifelong learning memory with priority eviction |
+| **📈 CurriculumManager** | Progressive difficulty scaling |
+| **🌡️ MarketRegimeDetector** | Real-time market condition classification |
+| **🤖 HybridTradingAgent** | Integration of PPO + Self-Evolving components |
+
+### Usage Example
+```python
+from src.evolving import HybridTradingAgent
+
+agent = HybridTradingAgent(
+    ppo_model_path='models/scalper/best.zip',
+    use_curiosity=True,
+    use_curriculum=True
+)
+
+obs = env.reset()
+while not done:
+    action, info = agent.get_action(obs)
+    next_obs, reward, done, _, env_info = env.step(action)
+    agent.store_experience(obs, action, reward, next_obs, env_info)
+    obs = next_obs
+```
+
+See [HYBRID_DEVELOPMENT_PLAN.md](docs/HYBRID_DEVELOPMENT_PLAN.md) for full roadmap.
+
+---
+
 ## 🚀 Quick Start
 
 ### Using AutoPilot CLI (Recommended)
@@ -58,7 +94,7 @@ python scripts/autopilot.py compare --role scalper
 ### Direct Scripts
 ```powershell
 # Train with checkpoints
-python scripts/train_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --resume
+python scripts/train_trinity.py --role scalper --data data/raw/XAUUSDm_M5_raw.parquet --steps 500000
 
 # Hyperparameter tuning
 python scripts/tune_trinity.py --role scalper --data data/processed/XAUUSD_M5_processed.parquet --trials 20
@@ -76,11 +112,14 @@ NeuroTrader/
 │   ├── brain/          # RL Agents, Environment, Features
 │   ├── body/           # MT5 Driver
 │   ├── skills/         # AutoPilot Components
+│   ├── evolving/       # 🆕 Self-Evolving AI Modules
 │   └── utils/          # Utilities
 ├── scripts/            # CLI Scripts
 ├── config/             # YAML Configurations
 ├── models/             # Trained Models (Versioned)
 ├── data/               # Processed Data
+├── tests/              # Unit Tests
+├── examples/           # Usage Examples
 └── docs/               # Documentation
 ```
 
@@ -88,27 +127,31 @@ NeuroTrader/
 
 ## 📚 Documentation
 -   [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Complete system documentation (Thai)
+-   [HYBRID_DEVELOPMENT_PLAN.md](docs/HYBRID_DEVELOPMENT_PLAN.md) - Self-Evolving AI Roadmap
 -   [RL_ALGORITHMS_TH.md](docs/RL_ALGORITHMS_TH.md) - RL algorithms comparison (Thai)
 -   [DEV_JOURNAL.md](DEV_JOURNAL.md) - Development history
 
 ---
 
-**Status:** ✅ V2.1 Unified Engine (Jan 2026) | **OS:** Windows Native
+**Status:** ✅ V2.7 Scalper Training | 🧬 Self-Evolving AI Phase 1 | **OS:** Windows Native
 
-## ⚡ V2.1 Critical Upgrade
+## ⚡ Version History
+
+### V2.7 Scalper (Current Training)
+- Steeper time decay (0.04/step from 4 bars)
+- Higher entry bonus (0.08)
+- Speed bonus for exits < 12 steps
+
+### V2.1 Unified Engine
 **Unified Feature Engine**: Solved training/inference divergence.
 -   **One Logic Rule**: `src/brain/features.py` handles ALL indicators.
--   **Qwen-Validatd**: Architecture approved by Qwen-3 Coder (Cloud) audit.
--   **Clean Slate**: Old V1 models deprecated. Training V2.1 from scratch.
+-   **Qwen-Validated**: Architecture approved by Qwen-3 Coder (Cloud) audit.
 
-## ⚡ V5 Optimization (New!)
-In consultation with Cloud AI, we have refactored the system for performance:
+### V5 Optimization
 1.  **Fast Trainer (`src/brain/experimental/train_fast.py`)**: Parallel environment training (4-8x faster).
 2.  **Unified Config (`config/hyperparameters.yaml`)**: Centralized settings for easy experimentation.
 3.  **Robust Features (`src/brain/features.py`)**: Consolidated feature engineering with better NaN handling.
 
-### How to Run Fast Trainer
-```powershell
-# Run optimized parallel training
-python src/brain/experimental/train_fast.py
-```
+### V6 Self-Evolving AI (In Progress)
+Hybrid approach combining PPO with curiosity-driven exploration and lifelong learning.
+

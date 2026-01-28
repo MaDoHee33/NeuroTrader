@@ -81,6 +81,10 @@ def load_data(data_path: str) -> pd.DataFrame:
     # Ensure columns are lowercase
     df.columns = df.columns.str.lower()
     
+    # Handle MT5 column naming (tick_volume -> volume)
+    if 'tick_volume' in df.columns and 'volume' not in df.columns:
+        df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+    
     # Validation
     required = ['open', 'high', 'low', 'close', 'volume']
     if not all(col in df.columns for col in required):
