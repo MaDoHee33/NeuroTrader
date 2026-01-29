@@ -17,7 +17,7 @@ roles:
   scalper:
     description: "Short-term trader for quick profits"
     timeframes: ["M5", "M15"]
-    symbols: ["XAUUSD"]
+    symbols: ["XAUUSDm"]
     
     # Evaluation criteria
     eval_metric: "avg_holding_time"
@@ -67,9 +67,10 @@ roles:
       ent_coef: 0.001
 
 # Data paths (relative to project root)
+# Data paths (relative to project root)
 data:
-  base_dir: "data/processed"
-  pattern: "{symbol}_{timeframe}_processed.parquet"
+  base_dir: "data/raw"
+  pattern: "{symbol}_{timeframe}_raw.parquet"
 
 # Output paths
 output:

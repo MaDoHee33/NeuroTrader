@@ -661,11 +661,148 @@ python scripts/autopilot.py compare --role X # Compare versions
 **Status:** 
 - ✅ All modules created
 - ✅ Python bytecode generated (confirmed by `__pycache__`)
-- 🔄 V2.7 Scalper training running (~6% complete)
+- ✅ V2.7 Scalper training COMPLETED!
+
+---
+
+### 34. V2.7 Scalper Training Complete
+**Date:** 2026-01-28 (10:54)
+**Duration:** ~100 minutes (500,000 steps)
+
+**Training Results:**
+| Metric | Value |
+|--------|-------|
+| Total Steps | 500,000 ✅ |
+| Training Time | ~100 min |
+| Model Size | 7.4 MB |
+| Checkpoints | 5 (every 100k) |
+
+**Files Created:**
+```
+models/trinity_scalper_XAUUSDm_M5.zip           ← Main model
+models/checkpoints/scalper_XAUUSDm_M5_v27/
+├── checkpoint_100000.zip
+├── checkpoint_200000.zip
+├── checkpoint_300000.zip
+├── checkpoint_400000.zip
+├── checkpoint_500000.zip
+└── training_state.json
+```
+
+**V2.7 Configuration Applied:**
+| Parameter | V2.6 → V2.7 |
+|-----------|-------------|
+| PnL Multiplier | 20 → **25** |
+| Entry Bonus | 0.05 → **0.08** |
+| Time Decay Start | 6 → **4 bars** |
+| Time Decay Rate | 0.02 → **0.04/step** |
+| Force Exit | 36 → **24 steps** |
+| ent_coef | 0.02 → **0.03** |
+
+**Issues Encountered:**
+1. **Model Registry Error** (non-fatal): `'tags'` argument error in `register_model()`
+2. **RAM Limitation**: 8GB RAM insufficient for full backtest while IDE running
+
+**Status:** Training ✅ | Backtest ⏳ PENDING (RAM constraint)
+
+---
+
+### 35. Documentation & Git Update
+**Date:** 2026-01-28
+
+**Files Updated:**
+- `README.md` - Added V6 Self-Evolving AI section
+- `ROADMAP.md` - Added Phase 5 (Self-Evolving AI)
+- `DEV_JOURNAL.md` - Added entries #32-35
+
+**Git Commit:**
+```
+feat: Add Self-Evolving AI modules (Phase 5)
+- CuriosityModule, ExperienceBuffer, CurriculumManager
+- MarketRegimeDetector, HybridTradingAgent
+- Unit tests and usage examples
+- V2.7 Scalper configuration
+```
+
+**Push:** ✅ `origin/NeuroTrader-Windows`
+
+---
+
+## 📋 NEXT STEPS (Priority Order)
+
+### 🔴 Immediate (RAM Required)
+1. **Backtest V2.7 Scalper** - Compare holding time vs V2.6
+   ```powershell
+   # Run when RAM available (close IDE first)
+   python scripts/backtest_trinity.py --role scalper \
+     --data data/raw/XAUUSDm_M5_raw.parquet \
+     --model models/trinity_scalper_XAUUSDm_M5.zip
+   ```
+
+2. **Evaluate Holding Time** - Key metric for V2.7 success
+   - Target: Avg < 12 steps (1 hour)
+   - V2.6 was too long (holding trades for hours)
+
+### 🟡 After Backtest
+3. **Compare V2.7 vs V2.6** - If V2.7 better, promote to production
+4. **Integration Test** - Run HybridTradingAgent with V2.7 model
+5. **Fix Registry Bug** - Remove 'tags' argument from train_trinity.py
+
+### 🟢 Phase 5 Continuation
+6. **Connect Regime Detector** to HybridAgent
+7. **Create Training Script** for Hybrid approach
+8. **Paper Trading** - 1 week with Self-Evolving enabled
+
+---
+
+## 💡 Quick Test Script (Run Later)
+Script `quick_test_v27.py` was executed. See results below.
+
+---
+
+### 36. Quick Test of V2.7 Scalper (Results)
+**Date:** 2026-01-28
+**Context:** User requested test of the latest model (V2.7).
+**Test Script:** `quick_test_v27.py` (Fixed 0-d array bug and Equity calculation).
+
+**Results (1000 steps / 3.5 days):**
+- **Total Trades:** 889 (Action: BUY=999, SELL=1)
+- **Final Equity:** $10,496.85 (**+4.97%**)
+- **Behavior:** **Reward Hacking**.
+    - The model spams BUY every step.
+    - **Mechanism:** Buying adds to position and **resets the `steps_in_position` counter** to 0.
+    - **Consequence:** It successfully evades the "Time Decay" penalty (which starts at step 4) by never allowing the counter to reach 4.
+    - It also collects the "Entry Bonus" (+0.08) repeatedly.
+- **Verdict:** **FAILED**.
+    - While profitable (+5%), it is NOT a Scalper. It is an aggressive "Accumulator" that found a loophole in the environment logic.
+- The "Reset Timer on Buy" logic in `TradingEnv` must be fixed.
 
 **Next Steps:**
-1. Wait for V2.7 training to complete
-2. Backtest V2.7 Scalper
-3. Create integration test for Self-Evolving modules
-4. If V2.7 passes, proceed with Hybrid integration
+- **Fix `TradingEnv`**: Do NOT reset `steps_in_position` when adding to an existing position.
+- **Fix Reward**: Cap "Entry Bonus" or remove it for pyramiding.
+
+## 🤖 Hybrid AI Pivot (Phase 3.2) - 2026-01-29
+
+### The Decision: Abandon Pure PPO, Embrace Hybrid
+After fixing the "Reward Hacking" bug in Scalper V2.7, we retrained the model (V2.8) using a pure PPO approach.
+**Result:** The model struggled to learn a profitable policy without the "exploits". It failed to outperform the baseline.
+
+**Consultation with DeepSeek** confirmed that the pure PPO architecture has likely reached its limits for this specific environment configuration (Diminishing Returns).
+However, our parallel experiment with **Hybrid AI (Gen 1)** showed promising results:
+- **Exploration:** Found 144 unique usage patterns in just 6 minutes using Curiosity.
+- **Memory:** Successfully integrated "Ghost Replay" (Offline RL) from 5 old checkpoints, adding ~600 experiences to its buffer.
+
+**Strategy Shift:**
+We are pivoting 80% of our resources to **Phase 3.2: Full Hybrid Trinity**.
+- We will stop trying to "fix" the old Scalper PPO.
+- We will promote the `HybridTradingAgent` to be the main driver.
+- We will initialize 3 specialized agents: **Scalper**, **Swing**, **Trend**.
+- We will shift the training focus/weight from *Curiosity* to *Profitability*.
+
+### Action Plan
+1.  Update `HybridTradingAgent` to allow mixing Intrinsic (Curiosity) and Extrinsic (Profit) rewards.
+2.  Update `train_hybrid.py` to support role-based training (Scalper/Swing/Trend).
+3.  Launch **Hybrid Scalper V3.0** with a "Profit Focus" configuration.
+
+
 

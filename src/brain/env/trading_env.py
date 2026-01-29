@@ -15,7 +15,7 @@ class TradingEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend', reward_config: dict = None):
+    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend', reward_config: dict = None, risk_config: dict = None):
         super(TradingEnv, self).__init__()
         
         self.agent_type = agent_type.lower() # scalper, swing, trend
@@ -35,11 +35,15 @@ class TradingEnv(gym.Env):
         self.max_steps = max_steps # dynamic per episode usually
         
         # Initialize Risk Manager
-        self.risk_manager = RiskManager({
+        default_risk_config = {
             'max_lots': 1.0,           # Max 1.0 Lot per trade
             'daily_loss_pct': 0.05,    # 5% Daily Loss Stop
             'max_drawdown_pct': 0.20   # 20% Max Drawdown Circuit Breaker
-        })
+        }
+        if risk_config:
+            default_risk_config.update(risk_config)
+            
+        self.risk_manager = RiskManager(default_risk_config)
         
         # Sharpe ratio tracking
         self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
@@ -170,11 +174,23 @@ class TradingEnv(gym.Env):
                     # RISK MANAGER CHECK
                     if self.risk_manager.check_order("PAIR", units, "BUY", current_time):
                         # Allowed
+                        
+                        # Check if this is a NEW position or Pyramiding
+                        is_new_position = (self.position == 0)
+                        
                         self.position += units
                         self.balance -= cost
-                        trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
-                        self.steps_in_position = 0  # Reset holding counter on entry
-                        self.entry_price = current_price # Track Entry
+                        trade_info = {'action': 'BUY', 'price': current_price, 'units': units, 'is_new': is_new_position}
+                        
+                        if is_new_position:
+                            self.steps_in_position = 0  # Reset holding counter ONLY on new entry
+                            self.entry_price = current_price # Track Entry
+                        else:
+                            # Pyramiding: Do NOT reset timer
+                            # Update entry price (Weighted Average)? Or keep original?
+                            # For simple PnL calc based on total equity, average doesn't matter much 
+                            # but for "entry bonus" logic, it matters we know it's not new.
+                            pass
 
                     else:
                         # Blocked
@@ -291,8 +307,12 @@ class TradingEnv(gym.Env):
             reward = log_return * 25.0 
             
             # 2. Entry Bonus (Critical for Activity) - Increased to overcome spread
+            # FIX V2.7: Only apply bonus on FIRST entry (prevent spamming)
             if trade_info is not None and trade_info.get('action') == 'BUY':
-                 reward += 0.08  # V2.7: Increased from 0.05
+                 if trade_info.get('is_new', False):
+                     reward += 0.08  # Bonus for NEW positions only
+                 else:
+                     reward += 0.0   # No bonus for pyramiding
 
             # 3. Steeper Time Decay (V2.7)
             # Start at 4 bars (20min) with stronger penalty (0.04/step)

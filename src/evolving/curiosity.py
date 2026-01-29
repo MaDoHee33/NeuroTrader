@@ -259,6 +259,11 @@ class CuriosityModule:
         # Create input: concatenate observation and action
         input_vec = np.append(observation, action)
         
+        # Normalize input vector (consistency with update)
+        input_norm = np.linalg.norm(input_vec)
+        if input_norm > 1.0:
+            input_vec = input_vec / input_norm
+        
         # Predict next state
         predicted_next = np.dot(self.prediction_weights, input_vec)
         
@@ -285,10 +290,25 @@ class CuriosityModule:
         
         # Gradient: dL/dW = (predicted - actual) * input
         error = predicted_next - next_observation
+        
+        # Clip error to avoid exploding gradients based on huge prediction misses
+        error = np.clip(error, -1.0, 1.0)
+        
+        # Normalize input vector to prevent weight explosion
+        input_norm = np.linalg.norm(input_vec)
+        if input_norm > 1.0:
+            input_vec = input_vec / input_norm
+            
         gradient = np.outer(error, input_vec)
+        
+        # Clip gradient
+        gradient = np.clip(gradient, -0.5, 0.5)
         
         # Update weights
         self.prediction_weights -= self.prediction_lr * gradient
+        
+        # Regularize weights (decay) to keep them small
+        self.prediction_weights *= 0.999
     
     def _check_pattern_discovery(
         self,
