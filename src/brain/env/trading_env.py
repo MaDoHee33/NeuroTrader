@@ -1,46 +1,81 @@
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from typing import Optional
+from collections import deque
+from src.brain.risk_manager import RiskManager
+from src.brain.features import FeatureRegistry
 
 class TradingEnv(gym.Env):
     """
     A reinforcement learning environment for trading using Gymnasium.
+    Enhanced with research-based reward functions (Sharpe ratio, risk management).
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df: pd.DataFrame, initial_balance=10000, max_steps=None, render_mode=None):
+    def __init__(self, df_dict: dict, initial_balance=10000, max_steps=None, render_mode=None, feature_cols: list = None, agent_type: str = 'trend', reward_config: dict = None, risk_config: dict = None):
         super(TradingEnv, self).__init__()
         
-        self.df = df
+        self.agent_type = agent_type.lower() # scalper, swing, trend
+        
+        # Determine if single DF or Dict
+        if isinstance(df_dict, pd.DataFrame):
+            self.assets = {'DEFAULT': df_dict}
+        else:
+            self.assets = df_dict
+            
+        self.asset_names = list(self.assets.keys())
+        self.current_asset_name = self.asset_names[0]
+        self.df = self.assets[self.current_asset_name]
+        
         self.initial_balance = initial_balance
         self.render_mode = render_mode
-        self.max_steps = max_steps if max_steps else len(df) - 1
+        self.max_steps = max_steps # dynamic per episode usually
+        
+        # Initialize Risk Manager
+        default_risk_config = {
+            'max_lots': 1.0,           # Max 1.0 Lot per trade
+            'daily_loss_pct': 0.05,    # 5% Daily Loss Stop
+            'max_drawdown_pct': 0.20   # 20% Max Drawdown Circuit Breaker
+        }
+        if risk_config:
+            default_risk_config.update(risk_config)
+            
+        self.risk_manager = RiskManager(default_risk_config)
+        
+        # Sharpe ratio tracking
+        self.returns_history = deque(maxlen=100)  # Last 100 returns for Sharpe calculation
+        
+        # Reward Configuration (Default values if not provided)
+        self.reward_config = reward_config if reward_config else {}
+        self.time_limit = self.reward_config.get('max_holding_steps', 24)  # V2.7: 24 steps = 2 hours
+        self.sniper_penalty_start = self.reward_config.get('sniper_penalty_start', 12)
+        self.sniper_penalty_amt = self.reward_config.get('sniper_penalty_amt', 0.1)
+        self.force_exit_penalty = self.reward_config.get('force_exit_penalty', 1.0)
         
         # Action Space: 0=HOLD, 1=BUY, 2=SELL
         self.action_space = spaces.Discrete(3)
         
-        # Observation Space: 
-        # [Close Price, RSI, MACD, MACD_Signal, BB_High, BB_Low, EMA_20, EMA_50, Balance, Position]
-        # We assume these columns exist in the dataframe        # Features expected in DF
-        self.feature_cols = [
-            'close', 'rsi', 'macd', 'macd_signal', 
-            'bb_high', 'bb_low', 'ema_20', 'ema_50',
-            'atr', 'log_ret_lag_1', 'log_ret_lag_2', 'log_ret_lag_3', 'log_ret_lag_5'
-        ]
+        # Unified Feature Engine
+        self.registry = FeatureRegistry()
+        self.feature_cols = self.registry.feature_names
         
-        # Level 3: Add News Impact if available
-        if 'news_impact_score' in df.columns:
-            self.feature_cols.append('news_impact_score')
+        # Precompute features for the whole dataframe (Batch Mode)
+        # We assume self.df contains raw OHLCV
+        # We need to ensure self.df has the features.
+        # Since compute_batch returns ONLY features, we can keep them separate or merge.
+        # Merging is safer for index alignment.
+        self.features_df = self.registry.compute_batch(self.df)
         
-        # Check if cols exist
-        missing_cols = [c for c in self.feature_cols if c not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Dataframe missing required columns: {missing_cols}")
+        # Validate length
+        if len(self.features_df) != len(self.df):
+             # This happens if compute_batch trims (e.g. cold start). 
+             # But our new compute_batch returns same index!
+             pass
 
-        num_features = len(self.feature_cols) + 2 # +2 for balance and position
+        num_features = len(self.feature_cols) + 3 # +3 for balance, position, and steps_in_position
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(num_features,), dtype=np.float32
         )
@@ -51,87 +86,281 @@ class TradingEnv(gym.Env):
         self.position = 0.0 # Asset amount held
         self.equity = initial_balance
         self.trades_history = []
+        self.steps_in_position = 0  # Track how long we've been in a position
         
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
         
+        # Randomly select asset
+        import random
+        self.current_asset_name = random.choice(self.asset_names)
+        self.df = self.assets[self.current_asset_name]
+        
+        # Reset constraints
+        self.max_steps_episode = len(self.df) - 1
+        
         self.current_step = 0
-        self.balance = self.initial_balance
-        self.position = 0.0
+        initial_price = self.df.iloc[0]['close']
+        
+        # Start with 100% CASH, 0 position (forces model to learn entry/exit)
+        self.balance = self.initial_balance  # 100% cash
+        self.position = 0.0  # 0 position - model must BUY to enter
+        
         self.equity = self.initial_balance
         self.trades_history = []
+        self.steps_in_position = 0  # Reset holding time
+        self.entry_price = 0.0      # Track entry price for PnL calculation
+        self.returns_history.clear()
         
-        # Random start index if data is large enough for variety?
-        # For now, start at 0 (or strictly start after window size if we use window)
-        # But our DF is already stripped of NaNs, so safe to start at 0
+        # Initialize Risk Manager with starting state
+        self.risk_manager.reset_daily_metrics(self.balance)
+        self.risk_manager.update_metrics(self.equity, self.df.index[self.current_step] if isinstance(self.df.index[0], (pd.Timestamp, datetime)) else None)
+        
+        print(f"[RESET] [{self.current_asset_name}]: Balance=${self.balance:.2f}")
         
         return self._get_observation(), {}
-
+    
     def _get_observation(self):
-        # Get current row
-        row = self.df.iloc[self.current_step]
+        # Get feature row
+        # We index into precomputed features
+        feat_row = self.features_df.iloc[self.current_step]
         
-        obs = [
-            row[col] for col in self.feature_cols
-        ]
+        obs = feat_row.values.tolist()
         # Add account state
         obs.append(self.balance)
         obs.append(self.position)
+        # Add holding time (normalized: 0-1 where 1 = 100+ steps)
+        obs.append(min(self.steps_in_position / 100.0, 1.0))
         
         return np.array(obs, dtype=np.float32)
 
     def step(self, action):
+        # 0. Risk Check: Circuit Breaker
+        current_status = self.risk_manager.get_status()
+        if current_status['circuit_breaker']:
+            # Halt trading immediately
+            return self._get_observation(), -1.0, True, False, {'error': 'Circuit Breaker Active'}
+
         current_price = self.df.iloc[self.current_step]['close']
         
-        # Execute Action
-        # Simplification: All-in Buy/Sell for now to train basic logic
-        # OR Fixed Size. Let's do fixed size for stability: 0.1 units (assuming like crypto/forex)
-        # Or better: Spend 10% of balance (Buying) / Sell 100% of position (Selling)
-           
+        # Get Current Time for Risk Manager
+        # Try index first, then 'date'/'time' column
+        current_time = self.df.index[self.current_step]
+        if not isinstance(current_time, (pd.Timestamp, datetime, np.datetime64)):
+             if 'time' in self.df.columns:
+                 current_time = self.df.iloc[self.current_step]['time']
+             elif 'date' in self.df.columns:
+                 current_time = self.df.iloc[self.current_step]['date']
+        
+        # Position limits (prevent unlimited positions)
+        MAX_POSITION_VALUE = self.initial_balance * 2.0  # Max 2x initial balance
+        current_position_value = abs(self.position * current_price)
+        
         reward = 0
         prev_equity = self.equity
-        
         trade_info = None
+        risk_penalty = 0
         
-        if action == 1: # BUY
-            # Can only buy if we have balance
-            if self.balance > 0:
-                # Buy as much as possible? Or fixed amount?
-                # Let's say we buy with 99% of balance (minus fee placeholder)
-                cost = self.balance
-                fee = cost * 0.001 # 0.1% fee
-                invest_amount = cost - fee
+        if action == 1:  # BUY
+            # Can only buy if we have balance AND not over position limit
+            if self.balance > 0 and current_position_value < MAX_POSITION_VALUE:
+                # Use 99% of balance (keep 1% buffer)
+                cost = self.balance * 0.99
+                invest_amount = cost * (1 - 0.001) # Deduct fee approx
                 
                 if invest_amount > 0:
                     units = invest_amount / current_price
-                    self.position += units
-                    self.balance = 0 # Spent all
-                    trade_info = {'action': 'BUY', 'price': current_price, 'units': units}
                     
-        elif action == 2: # SELL
+                    # RISK MANAGER CHECK
+                    if self.risk_manager.check_order("PAIR", units, "BUY", current_time):
+                        # Allowed
+                        
+                        # Check if this is a NEW position or Pyramiding
+                        is_new_position = (self.position == 0)
+                        
+                        self.position += units
+                        self.balance -= cost
+                        trade_info = {'action': 'BUY', 'price': current_price, 'units': units, 'is_new': is_new_position}
+                        
+                        if is_new_position:
+                            self.steps_in_position = 0  # Reset holding counter ONLY on new entry
+                            self.entry_price = current_price # Track Entry
+                        else:
+                            # Pyramiding: Do NOT reset timer
+                            # Update entry price (Weighted Average)? Or keep original?
+                            # For simple PnL calc based on total equity, average doesn't matter much 
+                            # but for "entry bonus" logic, it matters we know it's not new.
+                            pass
+
+                    else:
+                        # Blocked
+                        risk_penalty = -0.1 # Small penalty for attempting forbidden trade
+                        
+        elif action == 2:  # SELL
             # Can only sell if we have position
             if self.position > 0:
+                units_to_sell = self.position
+                
+                # RISK MANAGER CHECK (Usually reducing risk is always allowed, but Max Lots might apply if we treat it as an order)
+                # For closing positions, we usually ALLOW it. 
+                # But if 'SELL' means 'Short Selling' (opening new position), we check.
+                # In this env, action 2 is "Close/Sell All" or "Short"? 
+                # Judging by logic: self.position = 0, it means CLOSE ALL.
+                # Reducing exposure should generally be allowed.
+                # So we bypass check_order for CLOSING positions, or pass is_close=True if our manager supported it.
+                # For now, we assume reducing position is always safe.
+                
+                revenue = self.position * current_price
+                fee = revenue * 0.001  # 0.1% transaction fee
+                self.balance += (revenue - fee)
+                self.position = 0
+                trade_info = {'action': 'SELL', 'price': current_price, 'units': units_to_sell}
+                self.steps_in_position = 0  # Reset on exit
+        
+        # Update holding time counter
+        if self.position > 0:
+            self.steps_in_position += 1
+            
+            # --- FORCE EXIT LOGIC (Scalper Hard Constraint) ---
+            if self.agent_type == 'scalper' and self.steps_in_position >= self.time_limit:
+                # Force Sell
+                current_price = self.df.iloc[self.current_step]['close']
                 revenue = self.position * current_price
                 fee = revenue * 0.001
                 self.balance += (revenue - fee)
                 self.position = 0
-                trade_info = {'action': 'SELL', 'price': current_price, 'units': 0}
+                self.steps_in_position = 0
+                # Record forced exit
+                trade_info = {'action': 'FORCE_SELL', 'price': current_price, 'units': self.position}
 
+        
+        # Update metrics AFTER action (to see new equity)
+        # But we need equity first. So we calculate equity next block.
+        
         # Update Step
         self.current_step += 1
         
         # Calculate Equity
-        self.equity = self.balance + (self.position * self.df.iloc[self.current_step]['close'] if self.current_step < len(self.df) else 0)
-        
-        # Reward: Change in equity (Log return is better for training stability)
-        # reward = self.equity - prev_equity
-        # Using Log Return: ln(current_equity / prev_equity)
-        # Handle zero division just in case
-        if prev_equity > 0:
-             reward = np.log(self.equity / prev_equity)
+        if self.current_step < len(self.df):
+            next_price = self.df.iloc[self.current_step]['close']
+            self.equity = self.balance + (self.position * next_price)
         else:
-             reward = 0
+            self.equity = self.balance + (self.position * current_price)
+        
+        # Update Risk Manager Metrics
+        self.risk_manager.update_metrics(self.equity, current_time)
+        
+        # ===== RESEARCH-BASED REWARD FUNCTION =====
+        # Reference: Multiple research papers on PPO for trading
+        
+        # 1. Calculate log return (base component)
+        if prev_equity > 0:
+            log_return = np.log(self.equity / prev_equity)
+        else:
+            log_return = 0
+        
+        # Track returns for Sharpe calculation
+        self.returns_history.append(log_return)
+        
+        # 2. Calculate Differential Sharpe Ratio (research-based)
+        # This approximates change in Sharpe ratio at each step
+        if len(self.returns_history) >= 10:  # Need minimum history
+            returns_array = np.array(self.returns_history)
+            mean_return = np.mean(returns_array)
+            std_return = np.std(returns_array) + 1e-6  # Avoid division by zero
+            sharpe_contribution = (log_return - mean_return) / std_return
+        else:
+            sharpe_contribution = 0
+        
+        # 3. Transaction cost penalty (Spam filter)
+        transaction_penalty = 0
+        if trade_info is not None:
+             # Penalize each trade slightly to prevent churning
+             transaction_penalty = -0.0005 
+ 
+        # 4. Holding Reward (Encourage riding trends)
+        holding_reward = 0
+        if self.position > 0 and log_return > 0:
+            holding_reward = 0.0002 # Bonus for holding while profitable
+            
+        # 5. Drawdown penalty (research-based risk management)
+        current_drawdown = (self.equity - self.initial_balance) / self.initial_balance
+        drawdown_penalty = 0
+        if current_drawdown < -0.15: # Critical Drawdown (-15%)
+            drawdown_penalty = -0.5  # Severe penalty
+        elif current_drawdown < -0.10: # High Drawdown (-10%)
+            drawdown_penalty = -0.2  # Heavy penalty
+        elif current_drawdown < -0.05: # Moderate Drawdown (-5%)
+            drawdown_penalty = -0.05  # Warning penalty
+        
+        # 6. Composite reward (weighted combination)
+        # Weights based on research best practices
+        # --- TRINITY REWARD SYSTEM ---
+        # 6. Composite reward (weighted combination)
+        # Weights based on research best practices
+        # --- TRINITY REWARD SYSTEM ---
+        if self.agent_type == 'scalper':
+            # SCALPER V2.7 (AGGRESSIVE SHORT-TERM): Steeper decay + Higher bonuses
+            # Goal: Force holding time < 1 hour (12 steps on M5)
+            
+            # 1. PnL (Continuous) - Increased multiplier
+            reward = log_return * 25.0 
+            
+            # 2. Entry Bonus (Critical for Activity) - Increased to overcome spread
+            # FIX V2.7: Only apply bonus on FIRST entry (prevent spamming)
+            if trade_info is not None and trade_info.get('action') == 'BUY':
+                 if trade_info.get('is_new', False):
+                     reward += 0.08  # Bonus for NEW positions only
+                 else:
+                     reward += 0.0   # No bonus for pyramiding
 
+            # 3. Steeper Time Decay (V2.7)
+            # Start at 4 bars (20min) with stronger penalty (0.04/step)
+            if self.position > 0 and self.steps_in_position > 4:
+                excess = self.steps_in_position - 4
+                decay = excess * 0.04  # V2.7: Increased from 0.02
+                reward -= decay
+
+            # 4. Speed Bonus: Higher reward for quick profitable exits
+            if trade_info is not None and trade_info.get('action') == 'SELL':
+                if log_return > 0 and self.steps_in_position < 12:  # < 1 hour
+                    speed_bonus = 0.15 * (12 - self.steps_in_position) / 12.0  # V2.7: Increased
+                    reward += speed_bonus
+
+            # 5. Force Exit Penalty
+            if trade_info is not None and trade_info.get('action') == 'FORCE_SELL':
+                reward -= self.force_exit_penalty
+
+
+        elif self.agent_type == 'swing':
+            # SWING: Trend Capturing
+            # Use the research-based mix but emphasize PnL + Trend
+            reward = (
+                0.7 * (log_return * 100) +
+                0.1 * sharpe_contribution +
+                0.1 * transaction_penalty +
+                0.1 * holding_reward + 
+                1.0 * risk_penalty
+            )
+            
+        else:
+            # TREND (Default): The existing Research-Based Formula
+            # Good for long-term holding
+            reward = (
+                0.5 * log_return +           # Base profit/loss
+                0.3 * sharpe_contribution +  # Risk-adjusted performance
+                0.1 * transaction_penalty +  # Discourage over-trading
+                0.1 * drawdown_penalty +     # Risk management
+                0.1 * holding_reward +       # Trend following
+                1.0 * risk_penalty           # Hard Risk violation penalty
+            )
+        
+        # 6. Portfolio balance bonus (encourage diversification)
+        # Small bonus for keeping balanced portfolio
+        portfolio_imbalance = abs(self.balance - (self.position * current_price))
+        if portfolio_imbalance < self.initial_balance * 0.3:  # Well balanced
+            reward += 0.005  # Small bonus
+        
         # Terminate
         done = False
         truncated = False

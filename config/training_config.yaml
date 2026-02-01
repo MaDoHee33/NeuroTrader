@@ -1,0 +1,100 @@
+# NeuroTrader AutoPilot Training Configuration
+# =============================================
+# This file defines the training pipeline for all Trinity agents.
+
+version: "1.0"
+
+# Global defaults
+defaults:
+  total_steps: 1000000
+  checkpoint_every: 100000
+  auto_backtest: true
+  auto_promote: true
+  notify: true
+
+# Role-specific configurations
+roles:
+  scalper:
+    description: "Short-term trader for quick profits"
+    timeframes: ["M5", "M15"]
+    symbols: ["XAUUSDm"]
+    
+    # Evaluation criteria
+    eval_metric: "avg_holding_time"
+    eval_threshold: 20  # steps, lower is better
+    higher_is_better: false
+    
+    # Hyperparameters (can be overridden by Optuna results)
+    # V2.7: Aggressive short-term with steeper penalties
+    hyperparams:
+      gamma: 0.85
+      learning_rate: 0.0003
+      n_steps: 64           # Short-sighted (~5h horizon)
+      batch_size: 64
+      ent_coef: 0.03        # V2.7: Increased for more exploration
+
+      
+  swing:
+    description: "Mid-term swing trader"
+    timeframes: ["H1", "H4"]
+    symbols: ["XAUUSD", "BTCUSD"]
+    
+    eval_metric: "sharpe_ratio"
+    eval_threshold: 1.0
+    higher_is_better: true
+    
+    hyperparams:
+      gamma: 0.95
+      learning_rate: 0.0002
+      n_steps: 1024
+      batch_size: 128
+      ent_coef: 0.005
+      
+  trend:
+    description: "Long-term trend follower"
+    timeframes: ["D1"]
+    symbols: ["XAUUSD", "BTCUSD", "DXY"]
+    
+    eval_metric: "total_return"
+    eval_threshold: 10.0  # percent
+    higher_is_better: true
+    
+    hyperparams:
+      gamma: 0.999
+      learning_rate: 0.0001
+      n_steps: 2048
+      batch_size: 256
+      ent_coef: 0.001
+
+# Data paths (relative to project root)
+# Data paths (relative to project root)
+data:
+  base_dir: "data/raw"
+  pattern: "{symbol}_{timeframe}_raw.parquet"
+
+# Output paths
+output:
+  models_dir: "models"
+  checkpoints_dir: "models/checkpoints"
+  logs_dir: "logs"
+  reports_dir: "reports"
+
+# Notification settings (override with environment variables)
+notifications:
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+    
+  discord:
+    enabled: false
+    webhook_url: "${DISCORD_WEBHOOK_URL}"
+    
+  file_log:
+    enabled: true
+
+# Optuna hyperparameter tuning
+tuning:
+  enabled: false
+  n_trials: 20
+  quick_steps: 50000  # Steps per trial for fast iteration
